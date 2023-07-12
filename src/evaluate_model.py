@@ -37,11 +37,12 @@ binary_model = 0
 binary_baseline = 0
 
 for x, y in dataloader_test:
+    eval_start = int(0.9 * x.size(-2))
     pred = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-    l1_model += l1loss(pred, y)
-    l1_baseline += l1loss(0, y)
-    binary_model += torch.mean(torch.sign(pred) == torch.sign(y))
-    binary_baseline += torch.mean(1 == torch.sign(y))
+    l1_model += l1loss(pred[:, eval_start:, :], y[:, eval_start:, :])
+    l1_baseline += l1loss(0, y[:, eval_start:, :])
+    binary_model += torch.mean(torch.sign(pred[:, eval_start:, :]) == torch.sign(y[:, eval_start:, :]))
+    binary_baseline += torch.mean(1 == torch.sign(y[:, eval_start:, :]))
 
 l1_model /= len(dataloader_test)
 l1_baseline /= len(dataloader_test)
