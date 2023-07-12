@@ -13,8 +13,19 @@ class MultiStockData(Dataset):
     def __init__(self, stocks, period, use_interval=[0,1]):
         self.stocks = stocks
         self.interval = use_interval
-        self.data = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
-        self.data = [np.array(data[['Open', 'High', 'Low', 'Close', 'Volume']], dtype=np.float32) for data in self.data]
+        self.data_pd = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
+        self.data = [np.array(data[['Volume', 'High', 'Low', 'Close']], dtype=np.float32) for data in self.data_pd]
+        self.open = [np.array(data[['Open']], dtype=np.float32) for data in self.data_pd]
+
+        # turn high, low and close into percentage change relative to open
+        for i in range(len(self.data)):
+            self.data[i][:,1:] = (self.data[i][:,1:] - self.open[i]) / self.open[i]
+
+        # normalize volume
+        for i in range(len(self.data)):
+            self.data[i][:,0] = self.data[i][:,0] - np.mean(self.data[i][:,0])
+            self.data[i][:,0] = self.data[i][:,0] / np.std(self.data[i][:,0])
+
         self.length = len(self.data)
 
     def __len__(self):
@@ -25,5 +36,5 @@ class MultiStockData(Dataset):
         x = torch.tensor(data[int(self.interval[0] * data.shape[0]) : min(int(self.interval[1] * data.shape[0]),
                                                                            data.shape[0]-1), :])
         y = torch.tensor(data[int(self.interval[0] * data.shape[0] + 1) : 
-                              min(int(self.interval[1] * data.shape[0] + 1), data.shape[0]), 3]).unsqueeze(-1)
+                              min(int(self.interval[1] * data.shape[0] + 1), data.shape[0]), -1]).unsqueeze(-1)
         return x, y

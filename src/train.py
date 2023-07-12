@@ -1,47 +1,46 @@
+import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 from torchinfo import summary
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from data import MultiStockData
-from transformer import Transformer
+from torch.utils.tensorboard import SummaryWriter
 
-# Dataset parameters
-STOCKS = ['AAPL'] * 1
-STOCKS += ['MSFT', 'GOOG', 'AMZN', 'FB', 'TSLA', 'NVDA', 'PYPL', 'ADBE', 'NFLX']
-PERIOD = 'max'
-TRAIN_INTERVAL = [0, 0.8]
-VAL_INTERVAL = [0.8, 0.9]
-TEST_INTERVAL = [0.9, 1]
+from transformer import *
+from data import *
+from utils import *
 
-# Model parameters
-D_FEATURES = 5
-D_MODEL = 256
-NUM_HEADS = 8
-NUM_ENCODER_LAYERS = 2
-NUM_DECODER_LAYERS = 2
-D_FEEDFORWARD = 256
-WINDOW = 20
-DROPOUT = 0.1
+N_FEATURES = 4
+N_EMBEDDING = 64
+N_HEADS = 4
+N_FORWARD = 64
+N_ENC_LAYERS = 0
+N_DEC_LAYERS = 1
+DEC_WINDOW = -1
+ENC_WINDOW = -1
+MEM_WINDOW = -1
 
-# Training parameters
-EPOCHS = 100
+NUM_EPOCHS = 300
+LEARNING_RATE = 0.001
 BATCH_SIZE = 1
-LR = 0.001
+STOCKS = ['AAPL', 'MSFT', 'AMZN', 'GOOG', 'TSLA']
+TRAIN_INTERVAL = [0, 0.8]
+VAL_INTERVAL = [0, 0.9]
+TEST_INTERVAL = [0, 1]
+PERIOD = 'max'
 
-# Log name
-name = "transformer_features{}_embed{}_enclayers{}_declayers{}_heads{}_forward{}_dropout{}_window{}_epochs{}_lr{:.0E}_{}".format(
-    D_FEATURES, D_MODEL, NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, NUM_HEADS, D_FEEDFORWARD, DROPOUT, 20, EPOCHS, LR, PERIOD)
+date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
+name = 'transformer_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}'.format(
+        N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date)
+
 file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
+writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
-# Dataloader definition
-train_dataset = MultiStockData(STOCKS, PERIOD, TRAIN_INTERVAL)
-val_dataset = MultiStockData(STOCKS, PERIOD, VAL_INTERVAL)
-test_dataset = MultiStockData(STOCKS, PERIOD, TEST_INTERVAL)
-
-train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, TRAIN_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, VAL_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, TEST_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
 
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -50,31 +49,23 @@ else:
     device = torch.device('cpu')
     print("Using CPU", file=file)
 
-# Model definition
-model = Transformer(D_FEATURES, D_MODEL, NUM_HEADS, NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, 
-                    D_FEEDFORWARD, dropout=DROPOUT, window=WINDOW)
+model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD)
 model = model.to(device)
-model_info = summary(model, input_size=[(BATCH_SIZE, 200, D_FEATURES), 
-                                 (BATCH_SIZE, 200, D_FEATURES)])
+model_info = summary(model, input_size=[(BATCH_SIZE, 200, N_FEATURES), (BATCH_SIZE, 200, N_FEATURES)])
 print(model_info, file=file)
+file.flush()
 
-# Loss function and optimizer
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=10)
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=LR)
-val_loss_min = float('inf')
+val_loss_min = np.Inf
 
-# Training loop
-for epoch in range(EPOCHS):
-    for x, y in train_dataloader:
-        
+for epoch in range(NUM_EPOCHS):
+    for x, y in dataloader:
         x = x.to(device)
         y = y.to(device)
-
-        # Zero the parameter gradients
         optimizer.zero_grad()
-
-        # Forward + backward + optimize
-        outputs = model(x, x)
+        outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
         loss = criterion(outputs, y)
         loss.backward()
         optimizer.step()
@@ -82,22 +73,49 @@ for epoch in range(EPOCHS):
     model.eval()
     val_loss = 0
     with torch.no_grad():
-        for x, y in val_dataloader:
+        for x, y in dataloader_val:
             x = x.to(device)
             y = y.to(device)
-            out = model(x, x)
-            val_loss += criterion(out, y)
-    val_loss = val_loss / len(val_dataloader)
+            out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+            val_loss += criterion(out[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:], y[:,int(x.size(-2)*TRAIN_INTERVAL[1]),:])
+    val_loss = val_loss / len(dataloader_val)
+
+    scheduler.step(val_loss)
+
+    writer.add_scalar("MSE/train", loss, epoch)
+    writer.add_scalar("MSE/val", val_loss, epoch)
 
     if val_loss < val_loss_min:
         torch.save(model.state_dict(), 
-                '../outputs/models/{}.pth'.format(name))
+                   '../outputs/models/{}.pth'.format(name))
         val_loss_min = val_loss
 
     model.train()
 
-    print(f"Epoch {epoch+1} / {EPOCHS}, train loss: {loss.item()}", file=file)
-    print(f"Epoch {epoch+1} / {EPOCHS}, val loss: {val_loss}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train MSE: {loss.item()}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MSE: {val_loss}", file=file)
     file.flush()
 
+
+print("Training finished", file=file)
+print("\nEvaluating best model on test set", file=file)
+file.flush()
+
+model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
+
+model.eval()
+test_loss = 0
+with torch.no_grad():
+    for x, y in dataloader_test:
+        x = x.to(device)
+        y = y.to(device)
+        out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+        test_loss += criterion(out[:,int(x.size(-2)*VAL_INTERVAL[1]):,:], y[:,int(x.size(-2)*VAL_INTERVAL[1]),:])
+test_loss = test_loss / len(dataloader_test)
+
+print(f"test loss: {test_loss}", file=file)
+
+writer.add_scalar("MSE/test", test_loss, epoch)
+file.flush()
 file.close()
+writer.close()

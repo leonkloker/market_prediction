@@ -1,0 +1,4 @@
+**/__pycache__
+/outputs/models
+/outputs/figures
+/outputs/tensorboards

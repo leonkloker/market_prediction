@@ -1,0 +1,34 @@
+Using CPU
+====================================================================================================
+Layer (type:depth-idx)                             Output Shape              Param #
+====================================================================================================
+Transformer                                        [1, 200, 1]               --
+├─Sequential: 1-1                                  [1, 200, 64]              --
+│    └─Linear: 2-1                                 [1, 200, 64]              320
+│    └─PositionalEncodingStandard: 2-2             [1, 200, 64]              --
+├─Sequential: 1-2                                  [1, 200, 64]              (recursive)
+│    └─Linear: 2-3                                 [1, 200, 64]              (recursive)
+│    └─PositionalEncodingStandard: 2-4             [1, 200, 64]              --
+├─Transformer: 1-3                                 [1, 200, 64]              --
+│    └─MyIdentity: 2-5                             [1, 200, 64]              --
+│    └─TransformerDecoder: 2-6                     [1, 200, 64]              --
+│    │    └─ModuleList: 3-1                        --                        41,984
+│    │    └─LayerNorm: 3-2                         [1, 200, 64]              128
+├─Sequential: 1-4                                  [1, 200, 1]               --
+│    └─Linear: 2-7                                 [1, 200, 32]              2,080
+│    └─Dropout: 2-8                                [1, 200, 32]              --
+│    └─ReLU: 2-9                                   [1, 200, 32]              --
+│    └─Linear: 2-10                                [1, 200, 1]               33
+====================================================================================================
+Total params: 44,545
+Trainable params: 44,545
+Non-trainable params: 0
+Total mult-adds (Units.MEGABYTES): 0.01
+====================================================================================================
+Input size (MB): 0.01
+Forward/backward pass size (MB): 0.87
+Params size (MB): 0.05
+Estimated Total Size (MB): 0.92
+====================================================================================================
+Epoch 1 / 300, train MSE: 0.009042613208293915
+Epoch 1 / 300, val MSE: nan
