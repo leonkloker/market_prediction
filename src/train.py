@@ -30,17 +30,18 @@ TRAIN_INTERVAL = [0, 0.8]
 VAL_INTERVAL = [0, 0.9]
 TEST_INTERVAL = [0, 1]
 PERIOD = 'max'
+BINARY = 1
 
-date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-name = 'transformer_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}'.format(
-        N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date)
+date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
+name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}'.format(
+        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date)
 
 file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
-dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, TRAIN_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, VAL_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, TEST_INTERVAL), batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, TRAIN_INTERVAL, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, VAL_INTERVAL, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, TEST_INTERVAL, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
 
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -57,7 +58,10 @@ file.flush()
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.2, patience=10)
-criterion = nn.MSELoss()
+if BINARY:
+    criterion = nn.BCELoss()
+else:
+    criterion = nn.MSELoss()
 val_loss_min = np.Inf
 
 for epoch in range(NUM_EPOCHS):
@@ -72,18 +76,26 @@ for epoch in range(NUM_EPOCHS):
 
     model.eval()
     val_loss = 0
+    val_acc = 0
     with torch.no_grad():
         for x, y in dataloader_val:
             x = x.to(device)
             y = y.to(device)
             out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-            val_loss += criterion(out[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:], y[:,int(x.size(-2)*TRAIN_INTERVAL[1]),:])
+            val_loss += criterion(out[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:], y[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:])
+
+            if not BINARY:
+                y = (y > 0).float()
+            val_acc += (out[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:].round() == y[:,int(x.size(-2)*TRAIN_INTERVAL[1]):,:]).float().mean()
+
     val_loss = val_loss / len(dataloader_val)
+    val_acc = val_acc / len(dataloader_val)
 
     scheduler.step(val_loss)
 
-    writer.add_scalar("MSE/train", loss, epoch)
-    writer.add_scalar("MSE/val", val_loss, epoch)
+    writer.add_scalar("Loss/train", loss, epoch)
+    writer.add_scalar("Loss/val", val_loss, epoch)
+    writer.add_scalar("Accuracy/val", val_acc, epoch)
 
     if val_loss < val_loss_min:
         torch.save(model.state_dict(), 
@@ -92,8 +104,9 @@ for epoch in range(NUM_EPOCHS):
 
     model.train()
 
-    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train MSE: {loss.item()}", file=file)
-    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val MSE: {val_loss}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train loss: {loss.item()}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val loss: {val_loss}", file=file)
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val acc: {val_acc}", file=file)
     file.flush()
 
 
@@ -105,17 +118,22 @@ model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
 
 model.eval()
 test_loss = 0
+test_acc = 0
 with torch.no_grad():
     for x, y in dataloader_test:
         x = x.to(device)
         y = y.to(device)
         out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
         test_loss += criterion(out[:,int(x.size(-2)*VAL_INTERVAL[1]):,:], y[:,int(x.size(-2)*VAL_INTERVAL[1]),:])
+        test_acc += (out[:,int(x.size(-2)*VAL_INTERVAL[1]):,:].round() == y[:,int(x.size(-2)*VAL_INTERVAL[1]),:]).float().mean()
 test_loss = test_loss / len(dataloader_test)
+test_acc = test_acc / len(dataloader_test)
 
 print(f"test loss: {test_loss}", file=file)
+print(f"test acc: {test_acc}", file=file)
 
-writer.add_scalar("MSE/test", test_loss, epoch)
+writer.add_scalar("Loss/test", test_loss, epoch)
+writer.add_scalar("Accuracy/test", test_acc, epoch)
 file.flush()
 file.close()
 writer.close()

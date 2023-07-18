@@ -25,7 +25,7 @@ def generate_mask(sz1, sz2=None, window=-1):
         return mask
 
 class PositionalEncodingStandard(nn.Module):
-    def __init__(self, d_model, max_len=10000):
+    def __init__(self, d_model, max_len=20000):
         super(PositionalEncodingStandard, self).__init__()
 
         pos_encoding = torch.zeros(max_len, d_model)

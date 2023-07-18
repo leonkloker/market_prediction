@@ -18,7 +18,7 @@ MEM_WINDOW = -1
 NUM_EPOCHS = 300
 LEARNING_RATE = 0.001
 
-date = '2023-07-12-16-00'
+date = '2023-07-14-05:53'
 name = 'transformer_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}'.format(
         N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date)
 
@@ -40,9 +40,9 @@ for x, y in dataloader_test:
     eval_start = int(0.9 * x.size(-2))
     pred = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
     l1_model += l1loss(pred[:, eval_start:, :], y[:, eval_start:, :])
-    l1_baseline += l1loss(0, y[:, eval_start:, :])
-    binary_model += torch.mean(torch.sign(pred[:, eval_start:, :]) == torch.sign(y[:, eval_start:, :]))
-    binary_baseline += torch.mean(1 == torch.sign(y[:, eval_start:, :]))
+    l1_baseline += l1loss(torch.zeros((1, x.size(-2) - eval_start, 1)), y[:, eval_start:, :])
+    binary_model += torch.mean((torch.sign(pred[:, eval_start:, :]) == torch.sign(y[:, eval_start:, :])).float())
+    binary_baseline += torch.mean((1 == torch.sign(y[:, eval_start:, :])).float())
 
 l1_model /= len(dataloader_test)
 l1_baseline /= len(dataloader_test)

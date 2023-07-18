@@ -30,6 +30,7 @@ class Transformer(nn.Module):
                                       nn.Dropout(dropout),
                                       nn.ReLU(),
                                       nn.Linear(int(d_model/2), 1))
+        self.classifier = nn.Sigmoid()
         
     def forward(self, src, tgt, enc_window=-1, dec_window=-1, mem_window=-1):
         # create source mask if sequence length or window has changed
@@ -55,6 +56,7 @@ class Transformer(nn.Module):
 
         output = self.transformer(src, tgt, tgt_mask=self.tgt_mask, src_mask=self.src_mask, memory_mask=self.memory_mask)
         output = self.regressor(output)
+        output = self.classifier(output)
 
         return output
 

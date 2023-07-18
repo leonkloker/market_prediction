@@ -10,8 +10,9 @@ VAL_SPLIT = 0.1
 TEST_SPLIT = 0.1
 
 class MultiStockData(Dataset):
-    def __init__(self, stocks, period, use_interval=[0,1]):
+    def __init__(self, stocks, period, use_interval=[0,1], binary=False):
         self.stocks = stocks
+        self.binary = binary
         self.interval = use_interval
         self.data_pd = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
         self.data = [np.array(data[['Volume', 'High', 'Low', 'Close']], dtype=np.float32) for data in self.data_pd]
@@ -37,4 +38,6 @@ class MultiStockData(Dataset):
                                                                            data.shape[0]-1), :])
         y = torch.tensor(data[int(self.interval[0] * data.shape[0] + 1) : 
                               min(int(self.interval[1] * data.shape[0] + 1), data.shape[0]), -1]).unsqueeze(-1)
+        if self.binary:
+            y = (y > 0).float()
         return x, y
