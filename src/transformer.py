@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from utils import PositionalEncodingStandard, generate_mask
+from utils import *
 
 class Transformer(nn.Module):
     def __init__(self, d_features, d_model, n_head, n_encoder_layers, n_decoder_layers, 
-                 d_feedforward, dropout=0.0, activation='gelu'):
+                 d_feedforward, dropout=0.0, activation='gelu', binary=False):
         super(Transformer, self).__init__()
 
         self.tgt_mask = generate_mask(1)
@@ -14,10 +14,10 @@ class Transformer(nn.Module):
         self.enc_window = -1
         self.dec_window = -1
         self.mem_window = -1
-        self.decoder_only = False
+        self.binary = binary
 
         self.embedding = nn.Sequential(nn.Linear(d_features, d_model),
-                                       PositionalEncodingStandard(d_model))
+                                       PositionalEncodingLearned(d_model))
         if n_encoder_layers == 0:
             self.transformer = nn.Transformer(d_model, n_head, n_encoder_layers, n_decoder_layers,
                                            d_feedforward, dropout, custom_encoder=MyIdentity(),
@@ -30,7 +30,10 @@ class Transformer(nn.Module):
                                       nn.Dropout(dropout),
                                       nn.ReLU(),
                                       nn.Linear(int(d_model/2), 1))
-        self.classifier = nn.Sigmoid()
+        if self.binary:
+            self.classifier = nn.Tanh()
+        else:
+            self.classifier = nn.Identity()
         
     def forward(self, src, tgt, enc_window=-1, dec_window=-1, mem_window=-1):
         # create source mask if sequence length or window has changed

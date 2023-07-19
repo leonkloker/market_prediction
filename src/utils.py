@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import math
 
 def generate_mask(sz1, sz2=None, window=-1):
         # square mask
@@ -24,18 +25,76 @@ def generate_mask(sz1, sz2=None, window=-1):
 
         return mask
 
-class PositionalEncodingStandard(nn.Module):
-    def __init__(self, d_model, max_len=20000):
-        super(PositionalEncodingStandard, self).__init__()
+class PositionalEncodingNLP(nn.Module):
+    def __init__(self, d_model, dropout=0.0, max_len=15000):
+        super(PositionalEncodingNLP, self).__init__()
+        self.dropout = nn.Dropout(dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(-2), :]
+        return self.dropout(x)
+    
+class PositionalEncodingLinear(nn.Module):
+    def __init__(self, d_model, max_len=15000, dropout=0.0):
+        super(PositionalEncodingLinear, self).__init__()
+        self.dropout = nn.Dropout(dropout)
 
         pos_encoding = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(torch.log(torch.tensor(10000.0)) / d_model))
-        pos_encoding[:, 0::2] = torch.sin(position * div_term)
-        pos_encoding[:, 1::2] = torch.cos(position * div_term)
+        pos_encoding[:,:] = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1) / max_len
         self.register_buffer('pos_encoding', pos_encoding)
 
     def forward(self, x):
-        # x has shape (batch_size, seq_len, n_inp)
-        return x + self.pos_encoding[:x.size(-2), :]
+        x = x + self.pos_encoding[:x.size(-2), :]
+        return self.dropout(x)
     
+class PositionalEncodingSinusoidal(nn.Module):
+    def __init__(self, d_model, max_len=15000, dropout=0.0):
+        super(PositionalEncodingSinusoidal, self).__init__()
+        self.dropout = nn.Dropout(dropout)
+
+        pos_encoding = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float)
+        pos_encoding[:,:] = -torch.cos(torch.pi * (position / max_len)).unsqueeze(1)
+        self.register_buffer('pos_encoding', pos_encoding)
+
+    def forward(self, x):
+        x = x + self.pos_encoding[:x.size(-2), :]
+        return self.dropout(x)
+    
+class PositionalEncodingLearned(nn.Module):
+    def __init__(self, d_model, max_len=15000, dropout=0.0):
+        super(PositionalEncodingLearned, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        self.linear_pos_encoding = PositionalEncodingLinear(d_model, max_len, dropout)
+        self.linear = nn.Sequential(nn.Linear(d_model, d_model), 
+                                    nn.ReLU(), 
+                                    nn.Linear(d_model, d_model),
+                                    nn.Tanh())
+
+    def forward(self, x):
+        x = x + self.linear(self.linear_pos_encoding.pos_encoding)[:x.size(-2), :]
+        return self.dropout(x)
+    
+class Time2Vec(nn.Module):
+    def __init__(self, k, dropout=0.0):
+        super(Time2Vec, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        self.k = k
+        self.linear = nn.Linear(1, k)
+
+    def forward(self, x, t=None):
+        if t == None:
+            t = torch.arange(x.size(-2)).unsqueeze(-1)
+        t = self.linear(t)
+        t = torch.cat([t[:, 0], torch.sin(t[:, 1:])], dim=-1)
+        t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
+        x = torch.cat([x, t], dim=-1)
+        return x
