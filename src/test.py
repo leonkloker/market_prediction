@@ -18,14 +18,14 @@ BINARY = 0
 NUM_EPOCHS = 300
 LEARNING_RATE = 0.001
 BATCH_SIZE = 1
-STOCKS = ['TSLA']
+STOCKS = ['SPY']
 TEST_INTERVAL = [0.9, 1]
 PERIOD = 'max'
 
 test_data = MultiStockData(STOCKS, 'max', binary=BINARY)
 dataloader_test = DataLoader(test_data, batch_size=1, shuffle=False)
 
-date = '2023-07-19-07:36'
+date = '2023-07-19-08:26'
 stock_str = '_'.join(STOCKS)
 name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}_stocks{}'.format(
         BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date, stock_str)
@@ -33,7 +33,6 @@ name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY)
 model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
 model.eval()
-
 
 returns = []
 daily_volatility = []

@@ -87,14 +87,17 @@ class Time2Vec(nn.Module):
     def __init__(self, k, dropout=0.0):
         super(Time2Vec, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.k = k
         self.linear = nn.Linear(1, k)
 
     def forward(self, x, t=None):
         if t == None:
-            t = torch.arange(x.size(-2)).unsqueeze(-1)
+            t = torch.arange(x.size(-2), dtype=torch.float32).unsqueeze(-1)
+        else:
+            t = torch.tensor(t).unsqueeze(-1)
+
+        t = t.to(x.device)
         t = self.linear(t)
-        t = torch.cat([t[:, 0], torch.sin(t[:, 1:])], dim=-1)
+        t = torch.cat([t[:, 0].unsqueeze(-1), torch.sin(t[:, 1:])], dim=-1)
         t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
         x = torch.cat([x, t], dim=-1)
         return x

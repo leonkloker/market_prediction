@@ -5,7 +5,7 @@ from utils import *
 
 class Transformer(nn.Module):
     def __init__(self, d_features, d_model, n_head, n_encoder_layers, n_decoder_layers, 
-                 d_feedforward, dropout=0.0, activation='gelu', binary=False):
+                 d_feedforward, dropout=0.0, activation='gelu', binary=False, d_pos=4):
         super(Transformer, self).__init__()
 
         self.tgt_mask = generate_mask(1)
@@ -15,9 +15,12 @@ class Transformer(nn.Module):
         self.dec_window = -1
         self.mem_window = -1
         self.binary = binary
+        self.d_pos = d_pos
 
-        self.embedding = nn.Sequential(nn.Linear(d_features, d_model),
-                                       PositionalEncodingLearned(d_model))
+        self.embedding = nn.Linear(d_features, d_model)
+        self.positional_encoding = Time2Vec(d_pos)
+        d_model += self.d_pos
+
         if n_encoder_layers == 0:
             self.transformer = nn.Transformer(d_model, n_head, n_encoder_layers, n_decoder_layers,
                                            d_feedforward, dropout, custom_encoder=MyIdentity(),
@@ -35,7 +38,7 @@ class Transformer(nn.Module):
         else:
             self.classifier = nn.Identity()
         
-    def forward(self, src, tgt, enc_window=-1, dec_window=-1, mem_window=-1):
+    def forward(self, src, tgt, enc_window=-1, dec_window=-1, mem_window=-1, t=None):
         # create source mask if sequence length or window has changed
         if self.src_mask.size(0) != src.size(-2) or self.enc_window != enc_window:
             mask = generate_mask(src.size(-2), window=enc_window).to(src.device)
@@ -55,7 +58,9 @@ class Transformer(nn.Module):
             self.mem_window = mem_window
 
         src = self.embedding(src)
+        src = self.positional_encoding(src, t=t)
         tgt = self.embedding(tgt)
+        tgt = self.positional_encoding(tgt, t=t)
 
         output = self.transformer(src, tgt, tgt_mask=self.tgt_mask, src_mask=self.src_mask, memory_mask=self.memory_mask)
         output = self.regressor(output)
