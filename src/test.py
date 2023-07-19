@@ -13,21 +13,22 @@ N_DEC_LAYERS = 2
 DEC_WINDOW = 20
 ENC_WINDOW = -1
 MEM_WINDOW = -1
-BINARY = 1
+BINARY = 0
 
-NUM_EPOCHS = 1000
+NUM_EPOCHS = 300
 LEARNING_RATE = 0.001
 BATCH_SIZE = 1
 STOCKS = ['TSLA']
 TEST_INTERVAL = [0.9, 1]
 PERIOD = 'max'
 
-test_data = MultiStockData(STOCKS, 'max', use_interval=[0, 1.])
+test_data = MultiStockData(STOCKS, 'max', binary=BINARY)
 dataloader_test = DataLoader(test_data, batch_size=1, shuffle=False)
 
-date = '2023-07-18-20:17'
-name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}'.format(
-        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date)
+date = '2023-07-19-07:36'
+stock_str = '_'.join(STOCKS)
+name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}_stocks{}'.format(
+        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date, stock_str)
 
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY)
 model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
@@ -38,10 +39,17 @@ returns = []
 daily_volatility = []
 max_drawdown = []
 sharpe_ratio = []
+accuracies = []
+l1_losses = []
 for k, (x, y) in enumerate(dataloader_test):
     predictions = (model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).squeeze(0).detach().numpy())
     trading_signals = trading_strategy(predictions, binary=BINARY)
     x = x.squeeze(0).detach().numpy()
+
+    accuracies.append(np.mean((np.sign(predictions) == np.sign(x[1:, -1])).astype(int)))
+
+    if not BINARY:
+        l1_losses.append(np.mean(np.abs(predictions - x[1:, -1])))
 
     daily_returns = (trading_signals[:-1, 0] * x[1:, -1])[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0])]
     daily_volatility.append(np.std(daily_returns))
@@ -55,8 +63,12 @@ for k, (x, y) in enumerate(dataloader_test):
     returns.append(net_values[-1])
 
     print("Trading strategy for stock {}:".format(STOCKS[k]))
+    print("After {} trading days".format(int((TEST_INTERVAL[1] - TEST_INTERVAL[0]) * x.shape[0])))
+    print("Binary accuracy: {}".format(accuracies[k]))
     print("Net value: {}".format(np.mean(returns[k])))
     print("Daily volatility: {}".format(np.mean(daily_volatility[k])))
     print("Max drawdown: {}".format(np.mean(max_drawdown[k])))
     print("Sharpe ratio: {}".format(np.mean(sharpe_ratio[k])))
+    if not BINARY:
+        print("L1 loss: {}".format(np.mean(l1_losses[k])))
     print("")

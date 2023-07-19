@@ -5,10 +5,6 @@ from torch.utils.data import Dataset
 import torch
 import yfinance
 
-TRAIN_SPLIT = 0.8
-VAL_SPLIT = 0.1
-TEST_SPLIT = 0.1
-
 class MultiStockData(Dataset):
     def __init__(self, stocks, period, start=0, end=1, binary=False):
         self.stocks = stocks
