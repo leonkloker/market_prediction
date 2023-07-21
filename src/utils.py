@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 import math
@@ -101,3 +102,12 @@ class Time2Vec(nn.Module):
         t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
         x = torch.cat([x, t], dim=-1)
         return x
+    
+def accuracy(out, y):
+    out = out.cpu().detach().numpy()
+    y = y.cpu().detach().numpy()
+    pred = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=out)
+    pred = (pred > 0).astype(int)
+    ground_truth = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=y)
+    ground_truth = (ground_truth > 0).astype(int)
+    return np.mean(pred == ground_truth)

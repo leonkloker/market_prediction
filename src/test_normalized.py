@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 
 from transformer import *
 from strategy import *
+from utils import *
 
 N_FEATURES = 4
 N_EMBEDDING = 64
@@ -23,10 +24,10 @@ STOCKS = ['SPY']
 TEST_INTERVAL = [0.9, 1]
 PERIOD = 'max'
 
-test_data = MultiStockData(STOCKS, 'max', binary=BINARY)
+test_data = MultiStockDataNormalized(STOCKS, 'max', binary=BINARY)
 dataloader_test = DataLoader(test_data, batch_size=1, shuffle=False)
 
-date = '2023-07-20-09:40'
+date = '2023-07-21-07:33'
 stock_str = '_'.join(STOCKS)
 name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
         BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
@@ -45,12 +46,15 @@ long = []
 short = []
 for k, (x, y) in enumerate(dataloader_test):
     predictions = (model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).squeeze(0).detach().numpy())
-    trading_signals = trading_strategy(predictions, binary=BINARY)
+    first = predictions[:,0,0] - x.detach().numpy()[:,0,0]
+    preds = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='same'), axis=1, arr=predictions)
+    preds[:,0,0] = first
+    trading_signals = trading_strategy(preds, binary=BINARY)
     x = x.squeeze(0).detach().numpy()
 
-    accuracies.append(np.mean((np.sign(predictions) == np.sign(x[1:, -1])).astype(int)[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0])]))
-    long.append(np.prod(x[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0]), -1] + 1) - 1)
-    short.append(np.prod(-x[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0]), -1] + 1) - 1)
+    accuracies.append(accuracy(predictions[:, int(TEST_INTERVAL[0] * x.shape[1]) : int(TEST_INTERVAL[1] * x.shape[1]), 0], y[:, int(TEST_INTERVAL[0] * x.shape[1]) : int(TEST_INTERVAL[1] * x.shape[1]), 0]))
+    #long.append(np.prod(x[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0]), -1] + 1) - 1)
+    #short.append(np.prod(-x[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0]), -1] + 1) - 1)
 
     if not BINARY:
         l1_losses.append(np.mean(np.abs(predictions - x[1:, -1])[int(TEST_INTERVAL[0] * x.shape[0]) : int(TEST_INTERVAL[1] * x.shape[0])]))
@@ -73,8 +77,8 @@ for k, (x, y) in enumerate(dataloader_test):
     print("Trading strategy for stock {}:".format(STOCKS[k]))
     print("After {} trading days".format(trading_days))
     print("Binary accuracy: {}".format(accuracies[k]))
-    print("Long return: {}".format(long[k]))
-    print("Short return: {}".format(short[k]))
+    #print("Long return: {}".format(long[k]))
+    #print("Short return: {}".format(short[k]))
     print("Net value: {}".format(np.mean(returns[k])))
     print("Average yearly return: {}".format(np.mean(returns[k]) * 252 / trading_days))
     print("Daily volatility: {}".format(np.mean(daily_volatility[k])))

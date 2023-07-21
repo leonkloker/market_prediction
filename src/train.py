@@ -13,13 +13,13 @@ from data import *
 from utils import *
 
 # Model parameters
-N_FEATURES = 4
+N_FEATURES = 45
 N_EMBEDDING = 64
 N_HEADS = 4
 N_FORWARD = 64
 N_ENC_LAYERS = 2
 N_DEC_LAYERS = 2
-DEC_WINDOW = 20
+DEC_WINDOW = -1
 ENC_WINDOW = -1
 MEM_WINDOW = -1
 
@@ -27,6 +27,7 @@ MEM_WINDOW = -1
 NUM_EPOCHS = 300
 LEARNING_RATE = 0.001
 BATCH_SIZE = 1
+DROPOUT = 0.1
 
 # Data parameters
 STOCKS = ['SPY'] #AAPL MSFT AMZN GOOGL TSLA NVDA BAC UBER XOM META TSLA
@@ -38,28 +39,28 @@ BINARY = 0
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
 stock_str = '_'.join(STOCKS)
-name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_{}_stocks{}'.format(
-        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, date, stock_str)
+name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
+        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
 
 # Create log file and tensorboard writer
 file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Create dataloaders
-dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    device = torch.device('cuda:7')
+    device = torch.device('cuda:5')
     print("Using cuda", file=file)
 else:
     device = torch.device('cpu')
     print("Using CPU", file=file)
 
 # Create model, optimizer and scheduler
-model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY)
+model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, dropout=DROPOUT)
 model = model.to(device)
 model_info = summary(model, input_size=[(BATCH_SIZE, 200, N_FEATURES), (BATCH_SIZE, 200, N_FEATURES)])
 print(model_info, file=file)
@@ -72,7 +73,7 @@ scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10)
 if BINARY:
     criterion = nn.BCELoss()
 else:
-    criterion = nn.L1Loss()
+    criterion = nn.MSELoss()
 
 val_loss_min = np.Inf
 
@@ -96,8 +97,8 @@ for epoch in range(NUM_EPOCHS):
             x = x.to(device)
             y = y.to(device)
             out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-            val_loss += criterion(out[:,int(x.size(-2)*TRAIN_END):,:], y[:,int(x.size(-2)*TRAIN_END):,:])
-            val_acc += ((out[:,int(x.size(-2)*TRAIN_END):,:] > 0) == (y[:,int(x.size(-2)*TRAIN_END):,:] > 0)).float().mean()
+            val_loss += criterion(out[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:], y[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:])
+            val_acc += accuracy(out[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:], y[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:])
     val_loss = val_loss / len(dataloader_val)
     val_acc = val_acc / len(dataloader_val)
     writer.add_scalar("Loss/train", loss, epoch)
@@ -135,7 +136,7 @@ with torch.no_grad():
         y = y.to(device)
         out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
         test_loss += criterion(out[:,int(x.size(-2)*VAL_END):,:], y[:,int(x.size(-2)*VAL_END):,:])
-        test_acc += ((out[:,int(x.size(-2)*TRAIN_END):,:] > 0) == (y[:,int(x.size(-2)*TRAIN_END):,:] > 0)).float().mean()
+        test_acc += accuracy(out[:,int(x.size(-2)*VAL_END):,:], y[:,int(x.size(-2)*VAL_END):,:])
 test_loss = test_loss / len(dataloader_test)
 test_acc = test_acc / len(dataloader_test)
 
