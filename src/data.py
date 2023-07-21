@@ -17,14 +17,30 @@ class MultiStockData(Dataset):
         self.data = [np.array(data[['Volume', 'High', 'Low', 'Close']], dtype=np.float32) for data in self.data_pd]
         self.open = [np.array(data[['Open']], dtype=np.float32) for data in self.data_pd]
 
-        # turn high, low and close into percentage change relative to open
+        additional_features = []
+        
         for i in range(len(self.data)):
+
+            # normalize volume
+            self.data[i][:,0] = (self.data[i][:,0] - np.mean(self.data[i][:,0])) / np.std(self.data[i][:,0])
+
+            # turn high, low and close into percentage change relative to open
             self.data[i][:,1:] = (self.data[i][:,1:] - self.open[i]) / self.open[i]
 
-        # normalize volume
-        for i in range(len(self.data)):
-            self.data[i][:,0] = self.data[i][:,0] - np.mean(self.data[i][:,0])
-            self.data[i][:,0] = self.data[i][:,0] / np.std(self.data[i][:,0])
+            #calculate running mean and std of all features and add them as additional features
+            for n in [5, 10, 20, 50]:
+                for j in range(self.data[i].shape[1]):
+
+                    # running average
+                    additional_features.append(running_average(self.data[i][:,j], n))
+                    run_std = running_average(self.data[i][:,j]**2, n)
+                    run_std = np.sqrt(np.maximum(run_std - additional_features[-1]**2, 0))
+
+                    # running volatility
+                    additional_features.append(run_std)
+            
+            additional_features = np.array(additional_features).T
+            self.data[i] = np.concatenate([additional_features, self.data[i]], axis=1)
 
         self.length = len(self.data)
 

@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from transformer import *
 from strategy import *
 
-N_FEATURES = 4
+N_FEATURES = 36
 N_EMBEDDING = 64
 N_HEADS = 4
 N_FORWARD = 64
@@ -26,7 +26,7 @@ PERIOD = 'max'
 test_data = MultiStockData(STOCKS, 'max', binary=BINARY)
 dataloader_test = DataLoader(test_data, batch_size=1, shuffle=False)
 
-date = '2023-07-20-09:40'
+date = '2023-07-21-10:14'
 stock_str = '_'.join(STOCKS)
 name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
         BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)

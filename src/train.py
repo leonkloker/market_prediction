@@ -13,7 +13,7 @@ from data import *
 from utils import *
 
 # Model parameters
-N_FEATURES = 45
+N_FEATURES = 36
 N_EMBEDDING = 64
 N_HEADS = 4
 N_FORWARD = 64
@@ -47,9 +47,9 @@ file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Create dataloaders
-dataloader = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_test = DataLoader(MultiStockDataNormalized(STOCKS, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():

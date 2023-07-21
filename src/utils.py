@@ -103,7 +103,7 @@ class Time2Vec(nn.Module):
         x = torch.cat([x, t], dim=-1)
         return x
     
-def accuracy(out, y):
+def accuracy_normalized(out, y):
     out = out.cpu().detach().numpy()
     y = y.cpu().detach().numpy()
     pred = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=out)
@@ -111,3 +111,10 @@ def accuracy(out, y):
     ground_truth = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=y)
     ground_truth = (ground_truth > 0).astype(int)
     return np.mean(pred == ground_truth)
+
+def accuracy(out, y):
+    out = out.cpu().detach().numpy()
+    y = y.cpu().detach().numpy()
+    out = (out > 0).astype(int)
+    y = (y > 0).astype(int)
+    return np.mean(out == y)
