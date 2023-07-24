@@ -112,9 +112,11 @@ def accuracy_normalized(out, y):
     ground_truth = (ground_truth > 0).astype(int)
     return np.mean(pred == ground_truth)
 
-def accuracy(out, y):
-    out = out.cpu().detach().numpy()
-    y = y.cpu().detach().numpy()
+def accuracy(out, y, torch=True):
+    if torch:
+        out = out.cpu().detach().numpy()
+        y = y.cpu().detach().numpy()
+    
     out = (out > 0).astype(int)
     y = (y > 0).astype(int)
     return np.mean(out == y)

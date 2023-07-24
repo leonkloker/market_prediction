@@ -15,30 +15,32 @@ from utils import *
 # Model parameters
 N_FEATURES = 36
 N_EMBEDDING = 64
-N_HEADS = 4
+N_HEADS = 8
 N_FORWARD = 64
-N_ENC_LAYERS = 2
-N_DEC_LAYERS = 2
+N_ENC_LAYERS = 4
+N_DEC_LAYERS = 4
 DEC_WINDOW = -1
 ENC_WINDOW = -1
 MEM_WINDOW = -1
 
 # Training parameters
-NUM_EPOCHS = 300
-LEARNING_RATE = 0.001
+NUM_EPOCHS = 200
+LEARNING_RATE = 1e-3
 BATCH_SIZE = 1
 DROPOUT = 0.1
+WARMUP = 50
 
 # Data parameters
-STOCKS = ['SPY'] #AAPL MSFT AMZN GOOGL TSLA NVDA BAC UBER XOM META TSLA
-TRAIN_END = 0.8
-VAL_END = 0.9
+STOCKS_WARMUP = ['SPY', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'TSLA', 'NVDA', 'META', 'TSLA']
+STOCKS_FINETUNE = ['ETH-USD']
+TRAIN_END = 0.9
+VAL_END = 0.95
 PERIOD = 'max'
 BINARY = 0
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
-stock_str = '_'.join(STOCKS)
+stock_str = '_'.join(STOCKS_FINETUNE)
 name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
         BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
 
@@ -47,20 +49,21 @@ file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
 writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Create dataloaders
-dataloader = DataLoader(MultiStockData(STOCKS, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(MultiStockData(STOCKS, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_test = DataLoader(MultiStockData(STOCKS, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_warmup = DataLoader(MultiStockData(STOCKS_WARMUP, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(MultiStockData(STOCKS_FINETUNE, PERIOD, end=TRAIN_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_val = DataLoader(MultiStockData(STOCKS_FINETUNE, PERIOD, end=VAL_END, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
+dataloader_test = DataLoader(MultiStockData(STOCKS_FINETUNE, PERIOD, end=1, binary=BINARY), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    device = torch.device('cuda:5')
+    device = torch.device('cuda:7')
     print("Using cuda", file=file)
 else:
     device = torch.device('cpu')
     print("Using CPU", file=file)
 
 # Create model, optimizer and scheduler
-model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, dropout=DROPOUT)
+model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, dropout=DROPOUT, d_pos=N_HEADS)
 model = model.to(device)
 model_info = summary(model, input_size=[(BATCH_SIZE, 200, N_FEATURES), (BATCH_SIZE, 200, N_FEATURES)])
 print(model_info, file=file)
@@ -79,14 +82,25 @@ val_loss_min = np.Inf
 
 # Train model
 for epoch in range(NUM_EPOCHS):
-    for x, y in dataloader:
-        x = x.to(device)
-        y = y.to(device)
-        optimizer.zero_grad()
-        outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-        loss = criterion(outputs, y)
-        loss.backward()
-        optimizer.step()
+    if epoch < WARMUP:
+        for x, y in dataloader_warmup:
+            x = x.to(device)
+            y = y.to(device)
+            optimizer.zero_grad()
+            outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+            loss = criterion(outputs, y)
+            loss.backward()
+            optimizer.step()
+
+    else:
+        for x, y in dataloader:
+            x = x.to(device)
+            y = y.to(device)
+            optimizer.zero_grad()
+            outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+            loss = criterion(outputs, y)
+            loss.backward()
+            optimizer.step()
 
     # Evaluate model on validation set
     model.eval()
@@ -101,7 +115,7 @@ for epoch in range(NUM_EPOCHS):
             val_acc += accuracy(out[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:], y[:,int(x.size(-2)*TRAIN_END):int(x.size(-2)*VAL_END),:])
     val_loss = val_loss / len(dataloader_val)
     val_acc = val_acc / len(dataloader_val)
-    writer.add_scalar("Loss/train", loss, epoch)
+    writer.add_scalar("Loss/train", loss.item(), epoch)
     writer.add_scalar("Loss/val", val_loss, epoch)
     writer.add_scalar("Accuracy/val", val_acc, epoch)
 

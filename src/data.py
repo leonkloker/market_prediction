@@ -16,10 +16,9 @@ class MultiStockData(Dataset):
         self.data_pd = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
         self.data = [np.array(data[['Volume', 'High', 'Low', 'Close']], dtype=np.float32) for data in self.data_pd]
         self.open = [np.array(data[['Open']], dtype=np.float32) for data in self.data_pd]
-
-        additional_features = []
         
         for i in range(len(self.data)):
+            additional_features = []
 
             # normalize volume
             self.data[i][:,0] = (self.data[i][:,0] - np.mean(self.data[i][:,0])) / np.std(self.data[i][:,0])
