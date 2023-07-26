@@ -34,26 +34,26 @@ class Transformer(nn.Module):
                                       nn.ReLU(),
                                       nn.Linear(int(d_model/2), 1))
         if self.binary:
-            self.classifier = nn.Tanh()
+            self.classifier = nn.Sigmoid()
         else:
             self.classifier = nn.Identity()
         
     def forward(self, src, tgt, enc_window=-1, dec_window=-1, mem_window=-1, t=None):
         # create source mask if sequence length or window has changed
         if self.src_mask.size(0) != src.size(-2) or self.enc_window != enc_window:
-            mask = generate_mask(src.size(-2), window=enc_window).to(src.device)
+            mask = generate_mask_bool(src.size(-2), window=enc_window).to(src.device)
             self.src_mask = mask
             self.enc_window = enc_window
 
         # create target mask if sequence length or window has changed
         if self.tgt_mask.size(0) != tgt.size(-2) or self.dec_window != dec_window:
-            mask = generate_mask(tgt.size(-2), window=dec_window).to(tgt.device)
+            mask = generate_mask_bool(tgt.size(-2), window=dec_window).to(tgt.device)
             self.tgt_mask = mask
             self.dec_window = dec_window
         
         # create memory mask if sequence length or window has changed
         if self.memory_mask.size(0) != tgt.size(-2) or self.mem_window != mem_window:
-            mask = generate_mask(tgt.size(-2), src.size(-2), window=mem_window).to(tgt.device)
+            mask = generate_mask_bool(tgt.size(-2), src.size(-2), window=mem_window).to(tgt.device)
             self.memory_mask = mask
             self.mem_window = mem_window
 

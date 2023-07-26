@@ -13,7 +13,7 @@ def generate_mask(sz1, sz2=None, window=-1):
             mask = None
 
         # mask when all past history is available
-        if window == -1:
+        elif window == -1:
             mask = (torch.tril(torch.ones(sz1, sz2)) == 1)
             mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         
@@ -23,6 +23,28 @@ def generate_mask(sz1, sz2=None, window=-1):
             for i in range(sz1):
                 mask[i, max(0, i - window + 1) : min(i + 1, sz2)] = 1
             mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+
+        return mask
+
+def generate_mask_bool(sz1, sz2=None, window=-1):
+        # square mask
+        if sz2 is None:
+            sz2 = sz1
+        
+        # no mask
+        if window == -2:
+            mask = None
+
+        # mask when all past history is available
+        elif window == -1:
+            mask = torch.logical_not((torch.tril(torch.ones(sz1, sz2)) == 1).bool())
+        
+        # mask when only a window of past history is available
+        else:
+            mask = torch.zeros(sz1, sz2)
+            for i in range(sz1):
+                mask[i, max(0, i - window + 1) : min(i + 1, sz2)] = 1
+            mask = torch.logical_not(mask.bool())
 
         return mask
 
@@ -102,20 +124,15 @@ class Time2Vec(nn.Module):
         t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
         x = torch.cat([x, t], dim=-1)
         return x
-    
-def accuracy_normalized(out, y):
-    out = out.cpu().detach().numpy()
-    y = y.cpu().detach().numpy()
-    pred = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=out)
-    pred = (pred > 0).astype(int)
-    ground_truth = np.apply_along_axis(lambda m: np.convolve(m, np.array([1, -1]), mode='valid'), axis=1, arr=y)
-    ground_truth = (ground_truth > 0).astype(int)
-    return np.mean(pred == ground_truth)
 
-def accuracy(out, y, torch=True):
+def accuracy(out, y, torch=True, data='normalized'):
     if torch:
         out = out.cpu().detach().numpy()
         y = y.cpu().detach().numpy()
+
+    if data == 'normalized':
+        out = np.convolve(np.squeeze(out), np.array([1, -1]), mode='valid')
+        y = np.convolve(np.squeeze(y), np.array([1, -1]), mode='valid')
     
     out = (out > 0).astype(int)
     y = (y > 0).astype(int)
