@@ -2,93 +2,115 @@ from data import *
 from torch.utils.data import DataLoader
 
 from transformer import *
-from strategy import *
 from utils import *
 
-N_FEATURES = 36
-N_EMBEDDING = 64
-N_HEADS = 8
-N_FORWARD = 64
-N_ENC_LAYERS = 3
-N_DEC_LAYERS = 3
-DEC_WINDOW = 10
-ENC_WINDOW = -1
-MEM_WINDOW = 10
+# Model parameters
+N_FEATURES = 1
+N_EMBEDDING = 32
+N_HEADS = 4
+N_FORWARD = 32
+N_ENC_LAYERS = 1
+N_DEC_LAYERS = 1
+DEC_WINDOW = 2
+ENC_WINDOW = 9
+MEM_WINDOW = 2
+
+# Training parameters
+NUM_EPOCHS = 300
+LEARNING_RATE = 1e-4
+BATCH_SIZE = 1
+DROPOUT = 0.1
+
+# Data parameters
+FEATURES = ['Close']
+NORMALIZATION = [True]
+ADDITIONAL_FEATURES = []
+DATA = 'normalized'
 BINARY = 0
 
-NUM_EPOCHS = 200
-LEARNING_RATE = 1e-3
-DROPOUT = 0.1
-BATCH_SIZE = 1
-STOCKS = ['ETH-USD']
-TEST_INTERVAL = [0.95, 1.0]
+STOCK = ['SPY']
+VAL_END = 0.95
 PERIOD = 'max'
 
-test_data = MultiStockData(STOCKS, 'max', binary=BINARY)
-dataloader_test = DataLoader(test_data, batch_size=1, shuffle=False)
-
-date = '2023-07-25-12:36'
-stock_str = '_'.join(STOCKS)
-name = 'transformer_binary{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
-        BINARY, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
+# Log name
+date = '2023-07-27-07:09'
+stock_str = '_'.join(STOCK)
+name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
+        BINARY, DATA, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
 
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, d_pos=N_HEADS)
 model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
 model.eval()
 
-returns = []
-daily_volatility = []
-max_drawdown = []
-sharpe_ratio = []
-accuracies = []
-l1_losses = []
-l1_losses_ref = []
-long = []
-avg_predictions = []
-std_predictions = []
+test_dataset = StockData(STOCK, PERIOD, data=DATA, binary=BINARY, 
+                         features=FEATURES, additional_features=ADDITIONAL_FEATURES, 
+                         normalization_mask=NORMALIZATION)
+dataloader_test = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+net_values = 0
+net_values_baseline = 0
+daily_return = 0
+daily_volatility = 0
+max_drawdown = 0
+max_drawdown_baseline = 0
+sharpe_ratio = 0
+prediction_accuracy = 0
+l1_error = 0
+l1_error_baseline = 0
+avg_prediction = 0
+std_prediction = 0
+
 for k, (x, y) in enumerate(dataloader_test):
-    trading_days = int((TEST_INTERVAL[1] - TEST_INTERVAL[0]) * x.shape[-2])
-    predictions = (model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).squeeze(0).detach().numpy())
-    avg_predictions.append(np.mean(predictions))
-    std_predictions.append(np.std(predictions))
-    trading_signals = trading_strategy(predictions, binary=BINARY)
-    x = x.squeeze(0).detach().numpy()
-    y = y.squeeze(0).detach().numpy()
+    start = int(VAL_END * x.shape[-2])
+    end = x.shape[-2]
+    trading_days = end - start
 
-    accuracies.append(accuracy(predictions[int(x.shape[-2] * TEST_INTERVAL[0]) : int(x.shape[-2] * TEST_INTERVAL[1]), :],
-                               y[int(x.shape[-2] * TEST_INTERVAL[0]) : int(x.shape[-2] * TEST_INTERVAL[1]), :], torch=False))
-    long.append(np.prod(x[int(TEST_INTERVAL[0] * x.shape[-2]) : int(TEST_INTERVAL[1] * x.shape[-2]), -1] + 1) - 1)
+    prediction = np.squeeze(model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).detach().numpy())
+    x = np.squeeze(x.detach().numpy())
+    y = np.squeeze(y.detach().numpy())
+
+    avg_prediction = np.mean(prediction)
+    std_prediction = np.std(prediction)
+    trading_signals = trading_strategy(prediction, binary=BINARY, data=DATA)
+
+    prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA)
+    #print(y[start:end])
+
+    if DATA == 'normalized':
+        net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA, 
+                               mean=test_dataset.mean[0], std=test_dataset.std[0])
+        net_values_baseline = get_net_value(np.ones(trading_days), y[start:end], data=DATA,
+                                        mean=test_dataset.mean[0], std=test_dataset.std[0])
+
+    elif DATA == 'percent':
+        net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA)
+        net_values_baseline = get_net_value(np.ones(trading_days), y[start:end], data=DATA)
 
     if not BINARY:
-        l1_losses.append(np.mean(np.abs(predictions - x[1:, -1])[int(TEST_INTERVAL[0] * x.shape[-2]) : int(TEST_INTERVAL[1] * x.shape[-2])]))
-        l1_losses_ref.append(np.mean(np.abs(x[1:, -1])[int(TEST_INTERVAL[0] * x.shape[-2]) : int(TEST_INTERVAL[1] * x.shape[-2])]))
+        l1_error = np.mean(np.abs(prediction[start:end] - y[start:end]))
+        l1_error_baseline = np.mean(np.abs(y[start:end]))
 
-    daily_returns = (trading_signals[:-1, 0] * x[1:, -1])[int(TEST_INTERVAL[0] * x.shape[-2]) : int(TEST_INTERVAL[1] * x.shape[-2])]
-    daily_volatility.append(np.std(daily_returns))
+    daily_return = np.diff(net_values)
+    daily_volatility = np.std(daily_return)
 
-    net_values = np.cumsum(daily_returns)
-    i = np.argmax(np.maximum.accumulate(net_values) - net_values)
-    if i > 0:
-        j = np.argmax(net_values[:i])
-    else:
-        j = 0 
-    max_drawdown.append((net_values[j] - net_values[i]) / (net_values[j] + 1))
+    max_drawdown = get_max_drawdown(net_values)
+    max_drawdown_baseline = get_max_drawdown(net_values_baseline)
 
-    sharpe_ratio.append((np.mean(daily_returns) - long[-1]/trading_days) / daily_volatility[-1])
-    returns.append(net_values[-1])
+    sharpe_ratio = (np.mean(daily_return) - net_values_baseline[-1]/trading_days) / daily_volatility
 
-    print("Trading strategy for stock {}:".format(STOCKS[k]))
+    print("Trading strategy for stock {}:".format(STOCK[k]))
     print("After {} trading days".format(trading_days))
-    print("Binary accuracy: {}".format(accuracies[k]))
-    print("Long return: {}".format(long[k]))
-    print("Net value: {}".format(np.mean(returns[k])))
-    print("Average yearly return: {}".format(np.mean(returns[k]) * 252 / trading_days))
-    print("Daily volatility: {}".format(np.mean(daily_volatility[k])))
-    print("Max drawdown: {}".format((max_drawdown[k])))
-    print("Sharpe ratio: {}".format((sharpe_ratio[k])))
+    print("Binary accuracy: {}".format(prediction_accuracy))
+    print("Overall long return: {}".format(net_values_baseline[-1]))
+    print("Overall return: {}".format(net_values[-1]))
+    print("Yearly long return: {}".format(net_values_baseline[-1] * 252 / trading_days))
+    print("Yearly return: {}".format(net_values[-1] * 252 / trading_days))
+    print("Daily volatility: {}".format(daily_volatility))
+    print("Max drawdown baseline: {}".format(max_drawdown_baseline))
+    print("Max drawdown: {}".format(max_drawdown))
+    print("Sharpe ratio: {}".format(sharpe_ratio))
     if not BINARY:
-        print("L1 loss: {}".format(l1_losses[k]))
-        print("L1 loss reference: {}".format(l1_losses_ref[k]))
-        print("Average prediction: {}".format(avg_predictions[k]))
-        print("Std prediction: {}".format(std_predictions[k]))
-    print("")
+        print("L1 error baseline: {}".format(l1_error_baseline))
+        print("L1 error: {}".format(l1_error))
+    print("Average prediction: {}".format(avg_prediction))
+    print("Std prediction: {}".format(std_prediction))

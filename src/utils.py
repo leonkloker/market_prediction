@@ -137,3 +137,48 @@ def accuracy(out, y, torch=True, data='normalized'):
     out = (out > 0).astype(int)
     y = (y > 0).astype(int)
     return np.mean(out == y)
+
+def trading_strategy(predictions, binary=False, data='percent'):
+    predictions = np.squeeze(predictions)
+    if binary:
+        signal = (predictions > 0.5).astype(int)
+        signal[signal == 0] = -1
+
+    elif data == 'percent':
+        signal = np.zeros_like(predictions)
+        signal[predictions > 0] = 1
+        signal[predictions < 0] = -1
+
+    elif data == 'normalized':
+        signal = np.convolve(predictions, np.array([1, -1]), mode='same')
+        signal[signal > 0] = 1
+        signal[signal < 0] = -1
+    
+    return signal
+
+def get_net_value(signals, y, data='percent', mean=-1, std=-1):
+    signals = np.squeeze(signals)
+    y = np.squeeze(y)
+
+    if data == 'percent':
+        net_value = np.cumsum(signals * y)
+    
+    if data == 'normalized':
+        if mean == -1 or std == -1:
+            raise ValueError('mean and std must be provided for normalized data')
+        
+        enum = np.zeros_like(y)
+        enum[1:] = np.convolve(y, np.array([1, -1]), mode='valid')
+        enum = enum / (y + mean/std)
+        net_value = np.cumsum(signals * enum)
+    
+    return net_value
+
+def get_max_drawdown(net_value):
+    net_value = np.squeeze(net_value)
+    i = np.argmax(np.maximum.accumulate(net_value) - net_value)
+    if i > 0:
+        j = np.argmax(net_value[:i])
+    else:
+        j = 0 
+    return (net_value[j] - net_value[i]) / (net_value[j] + 1)

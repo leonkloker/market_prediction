@@ -13,27 +13,27 @@ from data import *
 from utils import *
 
 # Model parameters
-N_FEATURES = 9
-N_EMBEDDING = 64
-N_HEADS = 8
-N_FORWARD = 64
-N_ENC_LAYERS = 3
-N_DEC_LAYERS = 3
-DEC_WINDOW = 10
-ENC_WINDOW = 10
-MEM_WINDOW = 10
+N_FEATURES = 1
+N_EMBEDDING = 32
+N_HEADS = 4
+N_FORWARD = 32
+N_ENC_LAYERS = 1
+N_DEC_LAYERS = 1
+DEC_WINDOW = 2
+ENC_WINDOW = 9
+MEM_WINDOW = 2
 
 # Training parameters
 NUM_EPOCHS = 300
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 1
 DROPOUT = 0.1
-WARMUP = 100
+WARMUP = 10
 
 # Data parameters
 FEATURES = ['Close']
 NORMALIZATION = [True]
-ADDITIONAL_FEATURES = [5, 10, 20, 50]
+ADDITIONAL_FEATURES = []
 DATA = 'normalized'
 BINARY = 0
 
@@ -62,7 +62,7 @@ dataloader = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=TRAIN_END,
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
                                          normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
-dataloader_val = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=VAL_END, 
+dataloader_val = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=1, 
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
                                          normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
@@ -88,7 +88,7 @@ print(model_info, file=file)
 file.flush()
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=20, min_lr=1e-6)
 
 # Define loss function
 if BINARY:

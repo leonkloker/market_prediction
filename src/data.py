@@ -49,14 +49,16 @@ class StockData(Dataset):
                         run_std = running_average(self.data[i][:,j]**2, n)
                         run_std = np.sqrt(np.maximum(run_std - additional_features[-1]**2, 0))
                         additional_features.append(run_std)
-            
-                additional_features = np.array(additional_features).T
-                self.data[i] = np.concatenate([additional_features, self.data[i]], axis=1)
+
+                if len(additional_features) > 0:
+                    additional_features = np.array(additional_features).T
+                    self.data[i] = np.concatenate([additional_features, self.data[i]], axis=1)
 
             if self.mode == 'percent':
                 for j in range(self.data[i].shape[1]):
                     if normalization_mask[j]:
-                        self.data[i][:,j] = np.convolve(self.data[i][:,j], np.array([1, -1]), mode='valid') / self.data[i][:-1,-1]
+                        self.data[i][1:,j] = np.convolve(self.data[i][:,j], np.array([1, -1]), mode='valid') / self.data[i][:-1,-1]
+                        self.data[i][0,j] = 0
                     else:
                         self.data[i][:,j] = (self.data[i][:,j] - np.mean(self.data[i][:,j])) / np.std(self.data[i][:,j])
 
@@ -67,8 +69,9 @@ class StockData(Dataset):
                         run_std = np.sqrt(np.maximum(run_std - additional_features[-1]**2, 0))
                         additional_features.append(run_std)
                 
-                additional_features = np.array(additional_features).T
-                self.data[i] = np.concatenate([additional_features, self.data[i]], axis=1)
+                if len(additional_features) > 0:
+                    additional_features = np.array(additional_features).T
+                    self.data[i] = np.concatenate([additional_features, self.data[i]], axis=1)
 
     def __len__(self):
         return self.length
@@ -84,8 +87,9 @@ class StockData(Dataset):
                 y = (y > 0).float()
             
             if self.mode == 'normalized':
-                y = sample[int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]) + 1, sample.shape[0]), -1].unsqueeze(-1)
+                y = sample[int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]) + 1, sample.shape[0]), -1]
                 y = np.convolve(y, np.array([1, -1]), mode='valid')
+                y = torch.tensor(y).unsqueeze(-1)
                 y = (y > 0).float()
 
         return x, y
