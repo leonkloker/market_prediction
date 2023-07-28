@@ -144,12 +144,12 @@ def trading_strategy(predictions, binary=False, data='percent'):
         signal = (predictions > 0.5).astype(int)
         signal[signal == 0] = -1
 
-    elif data == 'percent':
+    if data == 'percent':
         signal = np.zeros_like(predictions)
         signal[predictions > 0] = 1
         signal[predictions < 0] = -1
 
-    elif data == 'normalized':
+    if data == 'normalized':
         signal = np.convolve(predictions, np.array([1, -1]), mode='same')
         signal[signal > 0] = 1
         signal[signal < 0] = -1
@@ -169,7 +169,7 @@ def get_net_value(signals, y, data='percent', mean=-1, std=-1):
         
         enum = np.zeros_like(y)
         enum[1:] = np.convolve(y, np.array([1, -1]), mode='valid')
-        enum = enum / (y + mean/std)
+        enum[1:] = enum[1:] / (y[:-1] + (mean/std))
         net_value = np.cumsum(signals * enum)
     
     return net_value

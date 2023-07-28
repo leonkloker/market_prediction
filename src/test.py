@@ -29,7 +29,7 @@ DATA = 'normalized'
 BINARY = 0
 
 STOCK = ['SPY']
-VAL_END = 0.95
+VAL_END = 0.9
 PERIOD = 'max'
 
 # Log name
@@ -69,18 +69,17 @@ for k, (x, y) in enumerate(dataloader_test):
     x = np.squeeze(x.detach().numpy())
     y = np.squeeze(y.detach().numpy())
 
-    avg_prediction = np.mean(prediction)
-    std_prediction = np.std(prediction)
+    avg_prediction = np.mean(prediction[start:end])
+    std_prediction = np.std(prediction[start:end])
     trading_signals = trading_strategy(prediction, binary=BINARY, data=DATA)
 
     prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA)
-    #print(y[start:end])
 
     if DATA == 'normalized':
         net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA, 
                                mean=test_dataset.mean[0], std=test_dataset.std[0])
         net_values_baseline = get_net_value(np.ones(trading_days), y[start:end], data=DATA,
-                                        mean=test_dataset.mean[0], std=test_dataset.std[0])
+                               mean=test_dataset.mean[0], std=test_dataset.std[0])
 
     elif DATA == 'percent':
         net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA)
@@ -101,6 +100,8 @@ for k, (x, y) in enumerate(dataloader_test):
     print("Trading strategy for stock {}:".format(STOCK[k]))
     print("After {} trading days".format(trading_days))
     print("Binary accuracy: {}".format(prediction_accuracy))
+    print("Fraction of long signals: {}".format(np.sum(trading_signals[start:end] == 1) / trading_days))
+    print("Fraction of short signals: {}".format(np.sum(trading_signals[start:end] == -1) / trading_days))
     print("Overall long return: {}".format(net_values_baseline[-1]))
     print("Overall return: {}".format(net_values[-1]))
     print("Yearly long return: {}".format(net_values_baseline[-1] * 252 / trading_days))
