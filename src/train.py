@@ -11,29 +11,30 @@ from torch.utils.tensorboard import SummaryWriter
 from transformer import *
 from data import *
 from utils import *
+from test import *
 
 # Model parameters
-N_FEATURES = 1
+N_FEATURES = 11
 N_EMBEDDING = 32
 N_HEADS = 4
 N_FORWARD = 32
-N_ENC_LAYERS = 1
-N_DEC_LAYERS = 1
-DEC_WINDOW = 2
-ENC_WINDOW = 9
-MEM_WINDOW = 2
+N_ENC_LAYERS = 3
+N_DEC_LAYERS = 3
+DEC_WINDOW = 10
+ENC_WINDOW = 10
+MEM_WINDOW = 10
 
 # Training parameters
-NUM_EPOCHS = 300
-LEARNING_RATE = 1e-4
+NUM_EPOCHS = 200
+LEARNING_RATE = 1e-3
 BATCH_SIZE = 1
-DROPOUT = 0.1
-WARMUP = 10
+DROPOUT = 0.2
+WARMUP = 0
 
 # Data parameters
 FEATURES = ['Close']
 NORMALIZATION = [True]
-ADDITIONAL_FEATURES = []
+ADDITIONAL_FEATURES = [5, 10, 20, 50, 100]
 DATA = 'normalized'
 BINARY = 0
 
@@ -73,7 +74,7 @@ dataloader_test = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=1,
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    device = torch.device('cuda:6')
+    device = torch.device('cuda:5')
     print("Using cuda", file=file)
 else:
     device = torch.device('cpu')
@@ -88,7 +89,7 @@ print(model_info, file=file)
 file.flush()
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=20, min_lr=1e-6)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10, min_lr=1e-8)
 
 # Define loss function
 if BINARY:
@@ -150,36 +151,31 @@ for epoch in range(NUM_EPOCHS):
     scheduler.step(val_loss)
 
     # Print epoch results
+    print(f"Epoch {epoch+1} / {NUM_EPOCHS}, learning rate: {optimizer.param_groups[0]['lr']}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, train loss: {loss.item()}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val loss: {val_loss}", file=file)
     print(f"Epoch {epoch+1} / {NUM_EPOCHS}, val acc: {val_acc}", file=file)
     file.flush()
 
 print("Training finished", file=file)
-print("\nEvaluating best model on test set", file=file)
-file.flush()
-
-# Evaluate best model on test set
-model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
-model.eval()
-test_loss = 0
-test_acc = 0
-with torch.no_grad():
-    for x, y in dataloader_test:
-        test_start = int(x.size(-2)*VAL_END)
-        x = x.to(device)
-        y = y.to(device)
-        out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-        test_loss += criterion(out[:, test_start:, :], y[:, test_start:, :])
-        test_acc += accuracy(out[:, test_start:, :], y[:, test_start:, :], torch=True, data=DATA)
-test_loss = test_loss / len(dataloader_test)
-test_acc = test_acc / len(dataloader_test)
-
-print(f"test loss: {test_loss}", file=file)
-print(f"test acc: {test_acc}", file=file)
-writer.add_scalar("Loss/test", test_loss, epoch)
-writer.add_scalar("Accuracy/test", test_acc, epoch)
-
+print("\nEvaluating best model on entire dataset", file=file)
 file.flush()
 file.close()
 writer.close()
+
+# Evaluate best model on entire dataset
+test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, 
+                N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
+                LEARNING_RATE, DROPOUT, STOCKS_FINETUNE, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
+                DATA, BINARY, 0, PERIOD, date, file=True)
+
+file.open()
+print("\nEvaluating best model on test dataset", file=file)
+file.flush()
+file.close()
+
+# Evaluate best model on test dataset
+test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
+            N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
+            LEARNING_RATE, DROPOUT, STOCKS_FINETUNE, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
+            DATA, BINARY, VAL_END, PERIOD, date, file=True)

@@ -5,10 +5,12 @@ from torch.utils.data import Dataset
 import torch
 import yfinance
 
+# Normalize every stock price with the runnaing average and standard deviation of the last 10 days e.g. to
+# account for the distribution shift over time
 class StockData(Dataset):
     def __init__(self, stocks, period, start=0, end=1, data='normalized', 
                  binary=False, features=['Close'], additional_features=[],
-                 normalization_mask=[]):
+                 normalization_mask=[], normalization_window=-1):
         self.stocks = stocks
         self.binary = binary
         self.interval = [start, end]
@@ -34,21 +36,22 @@ class StockData(Dataset):
             additional_features = []
 
             if self.mode == 'normalized':
-                self.mean.append(np.mean(self.data[i][:, -1]))
-                self.std.append(np.std(self.data[i][:, -1]))
-                
-                for j in range(self.data[i].shape[1]):
-                    if normalization_mask[j]:
-                        self.data[i][:,j] = (self.data[i][:,j] - self.mean[-1]) / self.std[-1]
-                    else:
-                        self.data[i][:,j] = (self.data[i][:,j] - np.mean(self.data[i][:,j])) / np.std(self.data[i][:,j])
-
-                for n in self.additional_features:
+                if normalization_window == -1:
+                    self.mean.append(np.mean(self.data[i][:, -1]))
+                    self.std.append(np.std(self.data[i][:, -1]))
+                    
                     for j in range(self.data[i].shape[1]):
-                        additional_features.append(running_average(self.data[i][:,j], n))
-                        run_std = running_average(self.data[i][:,j]**2, n)
-                        run_std = np.sqrt(np.maximum(run_std - additional_features[-1]**2, 0))
-                        additional_features.append(run_std)
+                        if normalization_mask[j]:
+                            self.data[i][:,j] = (self.data[i][:,j] - self.mean[-1]) / self.std[-1]
+                        else:
+                            self.data[i][:,j] = (self.data[i][:,j] - np.mean(self.data[i][:,j])) / np.std(self.data[i][:,j])
+
+                    for n in self.additional_features:
+                        for j in range(self.data[i].shape[1]):
+                            additional_features.append(running_average(self.data[i][:,j], n))
+                            run_std = running_average(self.data[i][:,j]**2, n)
+                            run_std = np.sqrt(np.maximum(run_std - additional_features[-1]**2, 0))
+                            additional_features.append(run_std)
 
                 if len(additional_features) > 0:
                     additional_features = np.array(additional_features).T
@@ -94,5 +97,8 @@ class StockData(Dataset):
 
         return x, y
 
-def running_average(x, n, mode='same'):
-    return np.array(np.convolve(x, np.ones((n,))/n, mode=mode), dtype=np.float32)
+def running_average(x, n):
+    res = np.zeros_like(x, dtype=np.float32)
+    res[:n-1] = np.cumsum(x[:n-1]) / np.arange(1, n)
+    res[n-1:] = np.convolve(x, np.ones((n,))/n, mode='valid')
+    return res
