@@ -1,3 +1,4 @@
+import datetime
 import numpy as np
 import os
 import pandas as pd
@@ -10,7 +11,7 @@ import yfinance
 class StockData(Dataset):
     def __init__(self, stocks, period, start=0, end=1, data='normalized', 
                  binary=False, features=['Close'], additional_features=[],
-                 normalization_mask=[], normalization_window=-1):
+                 normalization_mask=[], normalization_window=-1, time=False):
         self.stocks = stocks
         self.binary = binary
         self.interval = [start, end]
@@ -18,7 +19,7 @@ class StockData(Dataset):
         self.length = len(stocks)
 
         if period == 'max':
-            period = '8000d'
+            period = '5000d'
         self.period = period
 
         if normalization_mask == []:
@@ -27,10 +28,24 @@ class StockData(Dataset):
         features.append(features.pop(features.index('Close')))
         self.features = features
         self.additional_features = additional_features
-        self.data = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
-        self.data = [np.array(data[self.features], dtype=np.float32) for data in self.data]
+        self.data_pd = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
+        self.data = [np.array(data[self.features], dtype=np.float32) for data in self.data_pd]
+        self.weekdays = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6}
+        self.time = time
+        self.times = []
         self.mean = []
         self.std = []
+
+        if self.time:
+            for i in range(len(self.data)):
+                times = []
+                for j in range(self.data_pd[i].shape[0]):
+                    string = str(self.data_pd[i].index[j])[:-6]
+                    date = datetime.datetime.strptime(string, '%Y-%m-%d %H:%M:%S')
+                    weekday = self.weekdays[date.strftime('%a')]
+                    date = [(date.year - 2010) / 10, date.month / 12, date.day / 31, weekday / 4]
+                    times.append(date)
+                self.times.append(np.array(times, dtype=np.float32))
 
         for i in range(len(self.stocks)):
             additional_features = []
@@ -95,7 +110,12 @@ class StockData(Dataset):
                 y = torch.tensor(y).unsqueeze(-1)
                 y = (y > 0).float()
 
-        return x, y
+        if self.time:
+            t = torch.tensor(self.times[idx][int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]), sample.shape[0]-1), :])
+        else:
+            t = None
+
+        return x, y, t
 
 def running_average(x, n):
     res = np.zeros_like(x, dtype=np.float32)

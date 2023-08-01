@@ -7,7 +7,7 @@ from utils import *
 def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, 
                N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
                LEARNING_RATE, DROPOUT, STOCK, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
-               DATA, BINARY, VAL_END, PERIOD, date, file=False):
+               DATA, BINARY, TIME, VAL_END, PERIOD, date, file=False):
     
     stock_str = '_'.join(STOCK)
     name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
@@ -18,21 +18,25 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
     else:
         file = None
 
-    model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, d_pos=N_HEADS)
+    model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, binary=BINARY, d_pos=N_HEADS, time=TIME)
     model.load_state_dict(torch.load('../outputs/models/{}.pth'.format(name)))
     model.eval()
 
     test_dataset = StockData(STOCK, PERIOD, data=DATA, binary=BINARY, 
                             features=FEATURES, additional_features=ADDITIONAL_FEATURES, 
-                            normalization_mask=NORMALIZATION)
+                            normalization_mask=NORMALIZATION, time=TIME)
     dataloader_test = DataLoader(test_dataset, batch_size=1, shuffle=True)
 
-    for k, (x, y) in enumerate(dataloader_test):
+    for k, (x, y, t) in enumerate(dataloader_test):
         start = int(VAL_END * x.shape[-2])
         end = x.shape[-2]
         trading_days = end - start
 
-        prediction = np.squeeze(model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).detach().numpy())
+        if TIME:
+            prediction = np.squeeze(model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW, t=t).detach().numpy())
+        else:
+            prediction = np.squeeze(model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW).detach().numpy())
+
         x = np.squeeze(x.detach().numpy())
         y = np.squeeze(y.detach().numpy())
 
@@ -41,7 +45,7 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
 
         trading_signals = trading_strategy(prediction, binary=BINARY, data=DATA)
 
-        prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA)
+        prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA, binary=BINARY)
 
         if DATA == 'normalized':
             net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA, 
@@ -83,6 +87,7 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
             print("L1 error: {:.5f}".format(l1_error), file=file)
         print("Average prediction: {:.5f}".format(avg_prediction), file=file)
         print("Std prediction: {:.5f}".format(std_prediction), file=file)
+        print("\n", file=file)
 
     if file:
         file.close()

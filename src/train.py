@@ -14,12 +14,11 @@ from utils import *
 from test import *
 
 # Model parameters
-N_FEATURES = 11
-N_EMBEDDING = 32
-N_HEADS = 4
-N_FORWARD = 32
-N_ENC_LAYERS = 3
-N_DEC_LAYERS = 3
+N_EMBEDDING = 64
+N_HEADS = 8
+N_FORWARD = 64
+N_ENC_LAYERS = 0
+N_DEC_LAYERS = 5
 DEC_WINDOW = 10
 ENC_WINDOW = 10
 MEM_WINDOW = 10
@@ -32,17 +31,20 @@ DROPOUT = 0.2
 WARMUP = 0
 
 # Data parameters
-FEATURES = ['Close']
-NORMALIZATION = [True]
+FEATURES = ['Volume', 'Open', 'High', 'Low', 'Close']
+NORMALIZATION = [False, True, True, True, True]
 ADDITIONAL_FEATURES = [5, 10, 20, 50, 100]
 DATA = 'normalized'
-BINARY = 0
+BINARY = 1
+TIME_FEATURES = 1
 
 STOCKS_WARMUP = ['SPY', 'AAPL', 'AMZN', 'GOOGL', 'NVDA', 'META', 'TSLA']
-STOCKS_FINETUNE = ['SPY']
+STOCKS_FINETUNE = ['MBGAF']
 TRAIN_END = 0.9
 VAL_END = 0.95
 PERIOD = 'max'
+
+N_FEATURES = len(FEATURES) * (len(ADDITIONAL_FEATURES) * 2 + 1)
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
@@ -58,23 +60,23 @@ writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 dataloader_warmup = DataLoader(StockData(STOCKS_WARMUP, PERIOD, end=TRAIN_END, 
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
-                                         normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
+                                         normalization_mask=NORMALIZATION, time=TIME_FEATURES), batch_size=BATCH_SIZE, shuffle=True)
 dataloader = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=TRAIN_END, 
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
-                                         normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
+                                         normalization_mask=NORMALIZATION, time=TIME_FEATURES), batch_size=BATCH_SIZE, shuffle=True)
 dataloader_val = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=1, 
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
-                                         normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
+                                         normalization_mask=NORMALIZATION, time=TIME_FEATURES), batch_size=BATCH_SIZE, shuffle=True)
 dataloader_test = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=1, 
                                          data=DATA, binary=BINARY, features=FEATURES,
                                          additional_features=ADDITIONAL_FEATURES, 
-                                         normalization_mask=NORMALIZATION), batch_size=BATCH_SIZE, shuffle=True)
+                                         normalization_mask=NORMALIZATION, time=TIME_FEATURES), batch_size=BATCH_SIZE, shuffle=True)
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    device = torch.device('cuda:5')
+    device = torch.device('cuda:0')
     print("Using cuda", file=file)
 else:
     device = torch.device('cpu')
@@ -82,14 +84,14 @@ else:
 
 # Create model, optimizer and scheduler
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, 
-                    binary=BINARY, dropout=DROPOUT, d_pos=N_HEADS)
+                    binary=BINARY, dropout=DROPOUT, d_pos=N_HEADS, time=TIME_FEATURES)
 model = model.to(device)
 model_info = summary(model, input_size=[(BATCH_SIZE, 100, N_FEATURES), (BATCH_SIZE, 100, N_FEATURES)])
 print(model_info, file=file)
 file.flush()
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10, min_lr=1e-8)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10, min_lr=1e-7)
 
 # Define loss function
 if BINARY:
@@ -102,22 +104,34 @@ val_loss_min = np.Inf
 # Train model
 for epoch in range(NUM_EPOCHS):
     if epoch < WARMUP:
-        for x, y in dataloader_warmup:
+        for x, y, t in dataloader_warmup:
             x = x.to(device)
             y = y.to(device)
             optimizer.zero_grad()
-            outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-            loss = criterion(outputs, y)
+
+            if TIME_FEATURES:
+                t = t.to(device)
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW, t=t)
+            else:
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+
+            loss = criterion(out, y)
             loss.backward()
             optimizer.step()
 
     else:
-        for x, y in dataloader:
+        for x, y, t in dataloader:
             x = x.to(device)
             y = y.to(device)
             optimizer.zero_grad()
-            outputs = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
-            loss = criterion(outputs, y)
+
+            if TIME_FEATURES:
+                t = t.to(device)
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW, t=t)
+            else:
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+
+            loss = criterion(out, y)
             loss.backward()
             optimizer.step()
 
@@ -126,14 +140,20 @@ for epoch in range(NUM_EPOCHS):
     val_loss = 0
     val_acc = 0
     with torch.no_grad():
-        for x, y in dataloader_val:
+        for x, y, t in dataloader_val:
             val_start = int(x.size(-2)*TRAIN_END)
             val_end = int(x.size(-2)*VAL_END)
             x = x.to(device)
             y = y.to(device)
-            out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+            
+            if TIME_FEATURES:
+                t = t.to(device)
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW, t=t)
+            else:
+                out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
+
             val_loss += criterion(out[:, val_start:val_end, :], y[:, val_start:val_end, :])
-            val_acc += accuracy(out[:, val_start:val_end, :], y[:, val_start:val_end, :], torch=True, data=DATA)
+            val_acc += accuracy(out[:, val_start:val_end, :], y[:, val_start:val_end, :], torch=True, data=DATA, binary=BINARY)
     val_loss = val_loss / len(dataloader_val)
     val_acc = val_acc / len(dataloader_val)
     writer.add_scalar("Loss/train", loss.item(), epoch)
@@ -158,7 +178,7 @@ for epoch in range(NUM_EPOCHS):
     file.flush()
 
 print("Training finished", file=file)
-print("\nEvaluating best model on entire dataset", file=file)
+print("\nEvaluating best model", file=file)
 file.flush()
 file.close()
 writer.close()
@@ -167,15 +187,10 @@ writer.close()
 test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, 
                 N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
                 LEARNING_RATE, DROPOUT, STOCKS_FINETUNE, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
-                DATA, BINARY, 0, PERIOD, date, file=True)
-
-file.open()
-print("\nEvaluating best model on test dataset", file=file)
-file.flush()
-file.close()
+                DATA, BINARY, TIME_FEATURES, 0, PERIOD, date, file=True)
 
 # Evaluate best model on test dataset
 test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
             N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
             LEARNING_RATE, DROPOUT, STOCKS_FINETUNE, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
-            DATA, BINARY, VAL_END, PERIOD, date, file=True)
+            DATA, BINARY, TIME_FEATURES, VAL_END, PERIOD, date, file=True)

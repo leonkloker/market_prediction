@@ -5,7 +5,7 @@ from utils import *
 
 class Transformer(nn.Module):
     def __init__(self, d_features, d_model, n_head, n_encoder_layers, n_decoder_layers, 
-                 d_feedforward, dropout=0.0, activation='gelu', binary=False, d_pos=4):
+                 d_feedforward, dropout=0.0, activation='gelu', binary=False, d_pos=4, time=False):
         super(Transformer, self).__init__()
 
         self.tgt_mask = generate_mask(1)
@@ -18,7 +18,12 @@ class Transformer(nn.Module):
         self.d_pos = d_pos
 
         self.embedding = nn.Linear(d_features, d_model)
-        self.positional_encoding = Time2Vec(d_pos)
+        
+        if time:
+            self.positional_encoding = Time2Vec(d_pos, d_time=4)
+        else:
+            self.positional_encoding = Time2Vec(d_pos, d_time=1)
+        
         d_model += self.d_pos
 
         if n_encoder_layers == 0:

@@ -107,35 +107,54 @@ class PositionalEncodingLearned(nn.Module):
         return self.dropout(x)
     
 class Time2Vec(nn.Module):
-    def __init__(self, k, dropout=0.0):
+    def __init__(self, k, dropout=0.0, d_time=1):
         super(Time2Vec, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.linear = nn.Linear(1, k)
+        self.linear = nn.Linear(d_time, k)
+        self.d_time = d_time
 
     def forward(self, x, t=None):
-        if t == None:
-            t = torch.arange(x.size(-2), dtype=torch.float32).unsqueeze(-1)
-        else:
-            t = torch.tensor(t).unsqueeze(-1)
+        if not torch.is_tensor(t):
+            if t == None:
+                t = torch.arange(x.size(-2), dtype=torch.float32).unsqueeze(-1)
+                t = t.repeat(1, self.d_time)
+            else:
+                t = torch.tensor(t).unsqueeze(-1)
 
-        t = t.to(x.device)
-        t = self.linear(t)
-        t = torch.cat([t[:, 0].unsqueeze(-1), torch.sin(t[:, 1:])], dim=-1)
-        t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
-        x = torch.cat([x, t], dim=-1)
+            t = t.to(x.device)
+            t = self.linear(t)
+            t = torch.cat([t[:, 0].unsqueeze(-1), torch.sin(t[:, 1:])], dim=-1)
+            t = t.unsqueeze(0).repeat(x.size(0), 1, 1)
+            x = torch.cat([x, t], dim=-1)
+
+        else:
+            t = t.to(x.device)
+            t = self.linear(t)
+            t = torch.cat([t[:, :, 0].unsqueeze(-1), torch.sin(t[:, :, 1:])], dim=-1)
+            x = torch.cat([x, t], dim=-1)
+
         return x
 
-def accuracy(out, y, torch=True, data='normalized'):
+def accuracy(out, y, torch=True, data='normalized', binary=False):
     if torch:
         out = out.cpu().detach().numpy()
         y = y.cpu().detach().numpy()
+        
+    out = np.squeeze(out)
+    y = np.squeeze(y)
 
-    if data == 'normalized':
-        out = np.convolve(np.squeeze(out), np.array([1, -1]), mode='valid')
-        y = np.convolve(np.squeeze(y), np.array([1, -1]), mode='valid')
+    if not binary:
+        if data == 'normalized':
+            out = out[1:] - y[:-1]
+            y = y[1:] - y[:-1]
+
+        out = (out > 0).astype(int)
+        y = (y > 0).astype(int)
     
-    out = (out > 0).astype(int)
-    y = (y > 0).astype(int)
+    if binary:
+        out = (out > 0.5).astype(int)
+        y = (y > 0.5).astype(int)
+        
     return np.mean(out == y)
 
 def trading_strategy(predictions, binary=False, data='percent'):
