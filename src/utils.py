@@ -157,17 +157,18 @@ def accuracy(out, y, torch=True, data='normalized', binary=False):
         
     return np.mean(out == y)
 
-def trading_strategy(predictions, binary=False, data='percent'):
-    predictions = np.squeeze(predictions)
+def trading_strategy(out, y, binary=False, data='percent'):
+    out = np.squeeze(out)
     if binary:
-        signal = (predictions > 0.5).astype(int)
+        signal = (out > 0.5).astype(int)
         signal[signal == 0] = -1
     elif data == 'percent':
-        signal = np.zeros_like(predictions)
-        signal[predictions > 0] = 1
-        signal[predictions < 0] = -1
+        signal = np.zeros_like(out)
+        signal[out > 0] = 1
+        signal[out < 0] = -1
     elif data == 'normalized':
-        signal = np.convolve(predictions, np.array([1, -1]), mode='same')
+        signal = np.zeros_like(out)
+        signal[1:] = out[1:] - y[:-1]
         signal[signal > 0] = 1
         signal[signal < 0] = -1
     return signal

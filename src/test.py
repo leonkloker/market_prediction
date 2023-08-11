@@ -10,7 +10,7 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
                DATA, BINARY, TIME, VAL_END, PERIOD, date, file=False):
     
     stock_str = '_'.join(STOCK)
-    name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
+    name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encw{}_decw{}_memw{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
             BINARY, DATA, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
 
     if file:
@@ -43,7 +43,7 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
         avg_prediction = np.mean(prediction[start:end])
         std_prediction = np.std(prediction[start:end])
 
-        trading_signals = trading_strategy(prediction, binary=BINARY, data=DATA)
+        trading_signals = trading_strategy(prediction, y, binary=BINARY, data=DATA)
 
         prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA, binary=BINARY)
 
@@ -59,7 +59,7 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
 
         if not BINARY:
             l1_error = np.mean(np.abs(prediction[start:end] - y[start:end]))
-            l1_error_baseline = np.mean(np.abs(y[start:end]))
+            l1_error_baseline = np.mean(np.abs(y[start:end-1] - y[start+1:end]))
 
         daily_return = np.diff(net_values)
         daily_volatility = np.std(daily_return)
@@ -95,36 +95,40 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
 if __name__ == '__main__':
 
     # Model parameters
-    N_FEATURES = 11
-    N_EMBEDDING = 32
-    N_HEADS = 4
-    N_FORWARD = 32
-    N_ENC_LAYERS = 3
-    N_DEC_LAYERS = 3
+    N_EMBEDDING = 64
+    N_HEADS = 8
+    N_FORWARD = 64
+    N_ENC_LAYERS = 2
+    N_DEC_LAYERS = 6
     DEC_WINDOW = 10
-    ENC_WINDOW = 10
+    ENC_WINDOW = -1
     MEM_WINDOW = 10
 
     # Training parameters
     NUM_EPOCHS = 200
     LEARNING_RATE = 1e-3
+    BATCH_SIZE = 1
     DROPOUT = 0.2
+    WARMUP = 0
 
     # Data parameters
-    FEATURES = ['Close']
-    NORMALIZATION = [True]
-    ADDITIONAL_FEATURES = [5, 10, 20, 50, 100]
-    DATA = 'normalized'
+    FEATURES = ['Volume', 'Open', 'High', 'Low', 'Close']
+    NORMALIZATION = [False, True, True, True, True]
+    ADDITIONAL_FEATURES = [5, 10, 50, 100, 500]
+    DATA = 'percent'
     BINARY = 0
+    TIME_FEATURES = 1
 
     STOCK = ['SPY']
-    VAL_END = 0.95
+    VAL_END = 0.8
     PERIOD = 'max'
 
+    N_FEATURES = len(FEATURES) * (len(ADDITIONAL_FEATURES) * 2 + 1)
+
     # Log date
-    date = '2023-07-28-09:02'
+    date = '2023-08-11-09:59'
 
     test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, 
                 N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
                 LEARNING_RATE, DROPOUT, STOCK, FEATURES, NORMALIZATION, ADDITIONAL_FEATURES, 
-                DATA, BINARY, VAL_END, PERIOD, date)
+                DATA, BINARY, TIME_FEATURES, VAL_END, PERIOD, date=date)

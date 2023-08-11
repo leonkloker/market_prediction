@@ -17,10 +17,10 @@ from test import *
 N_EMBEDDING = 64
 N_HEADS = 8
 N_FORWARD = 64
-N_ENC_LAYERS = 0
-N_DEC_LAYERS = 5
+N_ENC_LAYERS = 2
+N_DEC_LAYERS = 6
 DEC_WINDOW = 10
-ENC_WINDOW = 10
+ENC_WINDOW = -1
 MEM_WINDOW = 10
 
 # Training parameters
@@ -33,23 +33,27 @@ WARMUP = 0
 # Data parameters
 FEATURES = ['Volume', 'Open', 'High', 'Low', 'Close']
 NORMALIZATION = [False, True, True, True, True]
-ADDITIONAL_FEATURES = [5, 10, 20, 50, 100]
-DATA = 'normalized'
-BINARY = 1
+ADDITIONAL_FEATURES = [5, 10, 50, 100, 500]
+DATA = 'percent'
+BINARY = 0
 TIME_FEATURES = 1
+MIN_INP_SIZE = 100
 
 STOCKS_WARMUP = ['SPY', 'AAPL', 'AMZN', 'GOOGL', 'NVDA', 'META', 'TSLA']
-STOCKS_FINETUNE = ['MBGAF']
+STOCKS_FINETUNE = ['SPY']
 TRAIN_END = 0.9
 VAL_END = 0.95
 PERIOD = 'max'
 
 N_FEATURES = len(FEATURES) * (len(ADDITIONAL_FEATURES) * 2 + 1)
+N_PADDING = max(max(N_ENC_LAYERS * (ENC_WINDOW - 1) + MEM_WINDOW - 1, DEC_WINDOW - 1,
+                    N_ENC_LAYERS * (ENC_WINDOW - 1) + MEM_WINDOW - 1 + (DEC_WINDOW - 1) * (N_DEC_LAYERS - 1)),
+                MIN_INP_SIZE)
 
 # Log name
 date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
 stock_str = '_'.join(STOCKS_FINETUNE)
-name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encwindow{}_decwindow{}_memwindow{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
+name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encw{}_decw{}_memw{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
         BINARY, DATA, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
 
 # Create log file and tensorboard writer
@@ -86,12 +90,12 @@ else:
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, 
                     binary=BINARY, dropout=DROPOUT, d_pos=N_HEADS, time=TIME_FEATURES)
 model = model.to(device)
-model_info = summary(model, input_size=[(BATCH_SIZE, 100, N_FEATURES), (BATCH_SIZE, 100, N_FEATURES)])
+model_info = summary(model, input_size=[(BATCH_SIZE, 5000, N_FEATURES), (BATCH_SIZE, 5000, N_FEATURES)])
 print(model_info, file=file)
 file.flush()
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=10, min_lr=1e-7)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.6, patience=10, min_lr=1e-7)
 
 # Define loss function
 if BINARY:
@@ -115,7 +119,7 @@ for epoch in range(NUM_EPOCHS):
             else:
                 out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
 
-            loss = criterion(out, y)
+            loss = criterion(out[:, N_PADDING:, :], y[:, N_PADDING:, :])
             loss.backward()
             optimizer.step()
 
@@ -131,7 +135,7 @@ for epoch in range(NUM_EPOCHS):
             else:
                 out = model(x, x, enc_window=ENC_WINDOW, dec_window=DEC_WINDOW, mem_window=MEM_WINDOW)
 
-            loss = criterion(out, y)
+            loss = criterion(out[:, N_PADDING:, :], y[:, N_PADDING:, :])
             loss.backward()
             optimizer.step()
 
