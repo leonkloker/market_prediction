@@ -1,7 +1,8 @@
+import math
 import numpy as np
 import torch
+
 from torch import nn
-import math
 
 def generate_mask(sz1, sz2=None, window=-1):
         # square mask
@@ -160,8 +161,8 @@ def accuracy(out, y, torch=True, data='normalized', binary=False):
 def trading_strategy(out, y, binary=False, data='percent'):
     out = np.squeeze(out)
     if binary:
-        signal = (out > 0.5).astype(int)
-        signal[signal == 0] = -1
+        signal = (out > 0.5).astype(float)
+        signal[signal == 0] = -1.
     elif data == 'percent':
         signal = np.zeros_like(out)
         signal[out > 0] = 1

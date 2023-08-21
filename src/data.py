@@ -16,10 +16,6 @@ class StockData(Dataset):
         self.binary = binary
         self.interval = [start, end]
         self.mode = data
-        self.length = len(stocks)
-
-        if period == 'max':
-            period = '5000d'
         self.period = period
 
         if normalization_mask == []:
@@ -29,6 +25,14 @@ class StockData(Dataset):
         self.features = features
         self.additional_features = additional_features
         self.data_pd = [yfinance.Ticker(stock).history(period=period) for stock in stocks]
+        
+        self.length = len(stocks)
+        self.samples_per_stock = 1
+        max_seq_len = max([len(stock) for stock in self.data_pd])
+        if max_seq_len > 20000:
+            self.samples_per_stock = max_seq_len // 2000 + 1
+            self.length = self.length * self.samples_per_stock
+
         self.data = [np.array(data[self.features], dtype=np.float32) for data in self.data_pd]
         self.weekdays = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6}
         self.time = time
@@ -95,6 +99,8 @@ class StockData(Dataset):
         return self.length
         
     def __getitem__(self, idx):
+        split_idx = idx % self.samples_per_stock
+        idx = idx // self.samples_per_stock
         sample = self.data[idx]
         x = torch.tensor(sample[int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]), sample.shape[0]-1), :])
 
@@ -105,7 +111,7 @@ class StockData(Dataset):
                 y = (y > 0).float()
             
             if self.mode == 'normalized':
-                y = sample[int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]) + 1, sample.shape[0]), -1]
+                y = sample[int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0] + 1), sample.shape[0]), -1]
                 y = np.convolve(y, np.array([1, -1]), mode='valid')
                 y = torch.tensor(y).unsqueeze(-1)
                 y = (y > 0).float()
@@ -114,7 +120,14 @@ class StockData(Dataset):
             t = torch.tensor(self.times[idx][int(self.interval[0] * sample.shape[0]) : min(int(self.interval[1] * sample.shape[0]), sample.shape[0]-1), :])
         else:
             t = None
-
+            
+        if self.samples_per_stock > 1:
+            start_idx = int((split_idx / self.samples_per_stock) * x.shape[0])
+            end_idx = int(((split_idx + 1) / self.samples_per_stock) * x.shape[0])
+            x = x[start_idx : end_idx, :]
+            y = y[start_idx : end_idx, :]
+            t = t[start_idx : end_idx, :]
+ 
         return x, y, t
 
 def running_average(x, n):

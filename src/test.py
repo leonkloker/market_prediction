@@ -44,18 +44,22 @@ def test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS,
         std_prediction = np.std(prediction[start:end])
 
         trading_signals = trading_strategy(prediction, y, binary=BINARY, data=DATA)
-
         prediction_accuracy = accuracy(prediction[start:end], y[start:end], torch=False, data=DATA, binary=BINARY)
+        
+        if BINARY:
+            y = x[1:, -1]
+            trading_signals = trading_signals[:-1]
+            trading_days -= 1
 
         if DATA == 'normalized':
             net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA, 
                                 mean=test_dataset.mean[0], std=test_dataset.std[0])
-            net_values_baseline = get_net_value(np.ones(trading_days), y[start:end], data=DATA,
+            net_values_baseline = get_net_value(np.ones_like(y[start:end]), y[start:end], data=DATA,
                                 mean=test_dataset.mean[0], std=test_dataset.std[0])
 
         elif DATA == 'percent':
             net_values = get_net_value(trading_signals[start:end], y[start:end], data=DATA)
-            net_values_baseline = get_net_value(np.ones(trading_days), y[start:end], data=DATA)
+            net_values_baseline = get_net_value(np.ones_like(y[start:end]), y[start:end], data=DATA)
 
         if not BINARY:
             l1_error = np.mean(np.abs(prediction[start:end] - y[start:end]))
@@ -96,10 +100,10 @@ if __name__ == '__main__':
 
     # Model parameters
     N_EMBEDDING = 64
-    N_HEADS = 8
+    N_HEADS = 16
     N_FORWARD = 64
-    N_ENC_LAYERS = 2
-    N_DEC_LAYERS = 6
+    N_ENC_LAYERS = 1
+    N_DEC_LAYERS = 3
     DEC_WINDOW = 10
     ENC_WINDOW = -1
     MEM_WINDOW = 10
@@ -116,17 +120,17 @@ if __name__ == '__main__':
     NORMALIZATION = [False, True, True, True, True]
     ADDITIONAL_FEATURES = [5, 10, 50, 100, 500]
     DATA = 'percent'
-    BINARY = 0
+    BINARY = 1
     TIME_FEATURES = 1
 
-    STOCK = ['SPY']
+    STOCK = ['ADDDF']
     VAL_END = 0.8
     PERIOD = 'max'
 
     N_FEATURES = len(FEATURES) * (len(ADDITIONAL_FEATURES) * 2 + 1)
 
     # Log date
-    date = '2023-08-11-09:59'
+    date = '2023-08-21-08:14'
 
     test_model(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, 
                 N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, 
