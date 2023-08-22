@@ -2,25 +2,25 @@ import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
 from torch.utils.tensorboard import SummaryWriter
 
-from transformer import *
 from data import *
-from utils import *
 from test import *
+from transformer import *
+from utils import *
 
 # Model parameters
 N_EMBEDDING = 64
 N_HEADS = 16
 N_FORWARD = 64
 N_ENC_LAYERS = 1
-N_DEC_LAYERS = 3
+N_DEC_LAYERS = 6
 DEC_WINDOW = 10
-ENC_WINDOW = -1
+ENC_WINDOW = 10
 MEM_WINDOW = 10
 
 # Training parameters
@@ -34,17 +34,18 @@ WARMUP = 0
 FEATURES = ['Volume', 'Open', 'High', 'Low', 'Close']
 NORMALIZATION = [False, True, True, True, True]
 ADDITIONAL_FEATURES = [5, 10, 50, 100, 500]
-DATA = 'percent'
-BINARY = 1
+DATA = 'normalized'
+BINARY = 0
 TIME_FEATURES = 1
 MIN_INP_SIZE = 100
 
 STOCKS_WARMUP = ['SPY', 'AAPL', 'AMZN', 'GOOGL', 'NVDA', 'META', 'TSLA']
-STOCKS_FINETUNE = ['ADDDF']
+STOCKS_FINETUNE = ['SPY']
 TRAIN_END = 0.9
 VAL_END = 0.95
 PERIOD = '3000d'
 
+# Calculate number of features and minimal sequence length used for updating
 N_FEATURES = len(FEATURES) * (len(ADDITIONAL_FEATURES) * 2 + 1)
 N_PADDING = max(max(N_ENC_LAYERS * (ENC_WINDOW - 1) + MEM_WINDOW - 1, DEC_WINDOW - 1,
                     N_ENC_LAYERS * (ENC_WINDOW - 1) + MEM_WINDOW - 1 + (DEC_WINDOW - 1) * (N_DEC_LAYERS - 1)),
@@ -55,10 +56,6 @@ date = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M")
 stock_str = '_'.join(STOCKS_FINETUNE)
 name = 'transformer_binary{}_{}_features{}_embed{}_enclayers{}_declayers{}_heads{}_foward{}_encw{}_decw{}_memw{}_epochs{}_lr{:.0E}_dropout{}_stocks{}_{}'.format(
         BINARY, DATA, N_FEATURES, N_EMBEDDING, N_ENC_LAYERS, N_DEC_LAYERS, N_HEADS, N_FORWARD, ENC_WINDOW, DEC_WINDOW, MEM_WINDOW, NUM_EPOCHS, LEARNING_RATE, DROPOUT, stock_str, date)
-
-# Create log file and tensorboard writer
-file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
-writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 
 # Create dataloaders
 dataloader_warmup = DataLoader(StockData(STOCKS_WARMUP, PERIOD, end=TRAIN_END, 
@@ -80,17 +77,21 @@ dataloader_test = DataLoader(StockData(STOCKS_FINETUNE, PERIOD, end=1,
 
 # Check if cuda is available
 if torch.cuda.is_available():
-    device = torch.device('cuda:0')
-    print("Using cuda", file=file)
+    device = torch.device('cuda:1')
+    print("Using cuda")
 else:
     device = torch.device('cpu')
-    print("Using CPU", file=file)
+    print("Using CPU")
 
 # Create model, optimizer and scheduler
 model = Transformer(N_FEATURES, N_EMBEDDING, N_HEADS, N_ENC_LAYERS, N_DEC_LAYERS, N_FORWARD, 
                     binary=BINARY, dropout=DROPOUT, d_pos=N_HEADS, time=TIME_FEATURES)
 model = model.to(device)
 model_info = summary(model, input_size=[(BATCH_SIZE, 5000, N_FEATURES), (BATCH_SIZE, 5000, N_FEATURES)])
+
+# Create log file and tensorboard writer
+file = open("../outputs/logs/{}.txt".format(name), "w", encoding="utf-8")
+writer = SummaryWriter(log_dir="../outputs/tensorboards/{}".format(name))
 print(model_info, file=file)
 file.flush()
 
@@ -107,6 +108,8 @@ val_loss_min = np.Inf
 
 # Train model
 for epoch in range(NUM_EPOCHS):
+    
+    # Warmup period
     if epoch < WARMUP:
         for x, y, t in dataloader_warmup:
             x = x.to(device)
@@ -123,6 +126,7 @@ for epoch in range(NUM_EPOCHS):
             loss.backward()
             optimizer.step()
 
+    # Finetuning period
     else:
         for x, y, t in dataloader:
             x = x.to(device)
